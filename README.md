@@ -9,8 +9,11 @@ HarmonyOS / OpenHarmony 上的 **VPN Extension + Xray-core** 集成示例工程�
 ## 功能概览
 
 - 全局 VPN（TUN）模式：系统流量经 `VpnExtensionAbility` 进入 Xray
+- **默认智能分流**：系统层排除全量国内 IPv4 CIDR（直连不进 TUN），Xray 侧 `geosite:cn` / `geoip:cn` 兜底；可切换「全局代理」
+- 扫码添加节点：HarmonyOS `ScanKit`（支持相册）
 - 本地代理模式：本机 SOCKS5 / HTTP（需手动配置系统或应用代理）
 - 支持导入常见 `vmess://` / `vless://` 分享链接（以你的节点配置为准）
+- geoip / geosite / 国内 CIDR 列表可后台自动更新（约 24h）
 - Native：ArkTS + NAPI + Go `c-shared`（`libxraycore.so`）
 
 技术栈与版本见 [`docs/tech-stack-with-versions.md`](docs/tech-stack-with-versions.md)。
@@ -19,31 +22,45 @@ HarmonyOS / OpenHarmony 上的 **VPN Extension + Xray-core** 集成示例工程�
 
 ### 能不能不开开发者模式？
 
-**当前仓库默认产物是调试签名 HAP，通常不能。**
+**不能（本仓库路径下）。** 默认产物是调试签名 HAP。
 
 | 安装方式 | 是否需要开发者相关能力 | 说明 |
 |----------|------------------------|------|
-| `hdc install` / DevEco Run | **需要** 开发者模式 + USB 调试 | 本仓库默认路径 |
-| 应用市场正式包 | 不需要开发者模式 | 需正式签名、资质与上架审核；**本示例默认不走这条路径** |
-| 企业分发 / 内部 MDM | 视企业策略 | 需企业证书与分发通道 |
+| 半自动脚本 / `hdc install` / DevEco Run | **需要** 开发者模式 + USB 调试 | **本仓库唯一推荐路径** |
+| 应用市场正式包 | 不需要开发者模式 | VPN/代理类国内上架极难；**本示例明确不走** |
+| 企业分发 / 内部 MDM | 视企业策略 | 需企业证书；本仓库不提供 |
 
-结论：
+结论（写死）：
 
-- **学习 / 自用调试**：请开启开发者模式，用 DevEco 或 `hdc` 安装。
-- **给普通用户、不开开发者模式**：需要你自行申请正式发布证书并完成合规上架或企业分发；本仓库不提供绕过系统安装限制的方法。
+- **熟人 / 自用**：开开发者模式 → 用 [`tools/install-ohosxray.bat`](tools/install-ohosxray.bat) 半自动安装。说明见 [`docs/install-for-friends.md`](docs/install-for-friends.md)。  
+- **Agent 代装**：遵循 [`docs/agent-sop-install.md`](docs/agent-sop-install.md)。  
+- **不开开发者模式给陌生人正规商店包**：不在本项目范围内；也不提供绕过系统安装限制的方法。
 
-### 从 Release 安装（调试签名）
+### 半自动安装（推荐）
 
-1. 手机开启 **开发者模式** 与 **USB 调试**，用数据线连接电脑。  
-2. 到本仓库 [Releases](../../releases) 下载 `*.hap`。  
-3. 安装：
+1. 手机开启 **开发者模式** 与 **USB 调试**，USB 连接电脑并点允许。  
+2. 从 [Releases](../../releases) 下载 `*.hap`，放到仓库根目录或 `release\`。  
+3. 双击：
+
+```text
+tools\install-ohosxray.bat
+```
+
+或：
+
+```powershell
+.\tools\install-ohosxray.ps1
+.\tools\install-ohosxray.ps1 -HapPath .\release\your.hap
+```
+
+4. 打开应用 → 添加节点 → 「全局 VPN」→ 默认「智能分流」→ 连接 → 允许 VPN。  
+5. WiFi / 移动网络切换后会自动按新出口重连；若偶发失败，断开再连一次即可。
+
+### 手动 hdc（等价）
 
 ```bash
 hdc install -r path/to/entry-default-signed.hap
 ```
-
-4. 打开应用 → 添加节点 → 选择「全局 VPN」→ 连接。  
-5. 首次连接系统会弹出 VPN 授权，请允许。
 
 > `libxraycore.so` 已打进 HAP，普通安装一般 **不需要** 再单独下载 `.so`。  
 > Release 中的 `libxraycore.so` 主要给从源码编译 HAP 的开发者使用。

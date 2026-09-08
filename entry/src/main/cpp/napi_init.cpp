@@ -14,15 +14,23 @@ std::string GetStringArg(napi_env env, napi_value value) {
 }
 
 napi_value Start(napi_env env, napi_callback_info info) {
-    size_t argc = 2;
-    napi_value args[2] = {nullptr, nullptr};
+    size_t argc = 3;
+    napi_value args[3] = {nullptr, nullptr, nullptr};
     napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
 
     std::string configJson = GetStringArg(env, args[0]);
     int32_t tunFd = 0;
     napi_get_value_int32(env, args[1], &tunFd);
+    std::string assetPath;
+    if (argc >= 3 && args[2] != nullptr) {
+        napi_valuetype t = napi_undefined;
+        napi_typeof(env, args[2], &t);
+        if (t == napi_string) {
+            assetPath = GetStringArg(env, args[2]);
+        }
+    }
 
-    std::string err = XrayBridgeStart(configJson, tunFd);
+    std::string err = XrayBridgeStart(configJson, tunFd, assetPath);
 
     napi_value result;
     napi_create_string_utf8(env, err.c_str(), err.size(), &result);

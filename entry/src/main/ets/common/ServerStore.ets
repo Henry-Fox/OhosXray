@@ -8,6 +8,7 @@ const STORE_NAME = 'ohos_xclient_servers';
 const KEY_SERVERS = 'servers';
 const KEY_ACTIVE_ID = 'active_id';
 const KEY_PENDING_PROFILE = 'pending_profile';
+const KEY_PENDING_SMART_ROUTE = 'pending_smart_route';
 const KEY_VPN_CONNECTED = 'vpn_connected';
 
 export class ServerStore {
@@ -68,9 +69,10 @@ export class ServerStore {
     await store.flush();
   }
 
-  async setPendingProfile(profile: ServerProfile): Promise<void> {
+  async setPendingProfile(profile: ServerProfile, smartRoute: boolean = true): Promise<void> {
     const store = this.ensureStore();
     await store.put(KEY_PENDING_PROFILE, JSON.stringify(profile));
+    await store.put(KEY_PENDING_SMART_ROUTE, smartRoute ? '1' : '0');
     await store.flush();
   }
 
@@ -81,9 +83,15 @@ export class ServerStore {
     try {
       return JSON.parse(raw) as ServerProfile;
     } catch (e) {
-      Logger.error(TAG, `failed to parse pending profile: ${Logger.stringifyError(e)}`);
+      Logger.error(TAG, `failed to parse pending profile: ${Logger.stringifyError(e as Error)}`);
       return null;
     }
+  }
+
+  async getPendingSmartRoute(): Promise<boolean> {
+    const store = this.ensureStore();
+    const raw = await store.get(KEY_PENDING_SMART_ROUTE, '1') as string;
+    return raw !== '0';
   }
 
   async getServerById(id: string): Promise<ServerProfile | null> {

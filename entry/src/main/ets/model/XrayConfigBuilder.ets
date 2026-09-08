@@ -14,6 +14,8 @@ export interface XrayBuildOptions {
   logDir?: string;
   // tun 模式下绑定代理出站到 VPN 建立前的物理网卡 IPv4，防止回环
   sendThrough?: string;
+  // 默认 true：国内 geosite:cn / geoip:cn 直连；false：全部走代理
+  smartRoute?: boolean;
   // local 模式下使用
   socksListen?: string;
   socksPort?: number;
@@ -148,8 +150,14 @@ interface XrayPolicyConfig {
   system: XrayPolicySystem;
 }
 
+interface XrayDnsServerObject {
+  address: string;
+  domains?: string[];
+  expectIPs?: string[];
+}
+
 interface XrayDnsConfig {
-  servers: string[];
+  servers: Array<string | XrayDnsServerObject>;
   queryStrategy?: string;
 }
 
@@ -300,12 +308,16 @@ export function buildXrayConfig(profile: ServerProfile, options: XrayBuildOption
   }
 
   const directOutbound: XrayOutbound = { tag: 'direct', protocol: 'freedom' };
+  if (options.sendThrough && options.sendThrough.length > 0) {
+    directOutbound.sendThrough = options.sendThrough;
+  }
   const blockOutbound: XrayOutbound = { tag: 'block', protocol: 'blackhole' };
   const dnsOutbound: XrayOutbound = { tag: 'dns-out', protocol: 'dns' };
 
-  // Vision 等流对 UDP 支持差：系统 DNS(UDP/53) 直走代理常失败，
-  // 国内 App 多用 HttpDNS 所以仍能上；国外站依赖系统 DNS 会解析失败。
-  // 把 53 端口劫持到 dns outbound，改走 DoH(TCP/TLS) 经代理查询。
+  const smartRoute = options.smartRoute !== false;
+
+  // Vision 等流对 UDP 支持差：系统 DNS(UDP/53) 直走代理常失败。
+  // 把 53 端口劫持到 dns outbound，改走 DoH(TCP/TLS)。
   const routingRules: XrayRoutingRule[] = [];
   if (options.mode === 'tun') {
     routingRules.push({
@@ -320,6 +332,42 @@ export function buildXrayConfig(profile: ServerProfile, options: XrayBuildOption
       network: 'tcp',
       outboundTag: 'dns-out'
     });
+    // Vision/XTLS 拒 UDP/443（QUIC）；拦掉后浏览器回落 TCP
+    routingRules.push({
+      type: 'field',
+      port: 443,
+      network: 'udp',
+      outboundTag: 'block'
+    });
+    if (smartRoute) {
+      // 系统层已排除大部分国内 IP；此处兜底：仍进入 TUN 的国内域名/IP 走 direct
+      routingRules.push({
+        type: 'field',
+        ip: ['geoip:private'],
+        outboundTag: 'direct'
+      });
+      routingRules.push({
+        type: 'field',
+        domain: [
+          'geosite:private',
+          'geosite:apple-cn',
+          'geosite:google-cn',
+          'geosite:tld-cn',
+          'geosite:cn'
+        ],
+        outboundTag: 'direct'
+      });
+      routingRules.push({
+        type: 'field',
+        domain: ['geosite:geolocation-!cn'],
+        outboundTag: 'proxy'
+      });
+      routingRules.push({
+        type: 'field',
+        ip: ['geoip:cn'],
+        outboundTag: 'direct'
+      });
+    }
   }
 
   const routing: XrayRouting = {
@@ -357,11 +405,26 @@ export function buildXrayConfig(profile: ServerProfile, options: XrayBuildOption
   };
 
   if (options.mode === 'tun') {
+    // DoH 目标靠 VPN 排除路由直出；DNS 分流仅作域名归属提示
+    const dnsServers: Array<string | XrayDnsServerObject> = [];
+    if (smartRoute) {
+      const cnDns: XrayDnsServerObject = {
+        address: 'https://dns.alidns.com/dns-query',
+        domains: [
+          'geosite:cn',
+          'geosite:apple-cn',
+          'geosite:google-cn',
+          'geosite:geolocation-cn',
+          'geosite:china-list',
+          'geosite:tld-cn'
+        ]
+      };
+      dnsServers.push(cnDns);
+    }
+    dnsServers.push('https://1.1.1.1/dns-query');
+    dnsServers.push('https://8.8.8.8/dns-query');
     const dnsConfig: XrayDnsConfig = {
-      servers: [
-        'https://1.1.1.1/dns-query',
-        'https://8.8.8.8/dns-query'
-      ],
+      servers: dnsServers,
       queryStrategy: 'UseIPv4'
     };
     config.dns = dnsConfig;

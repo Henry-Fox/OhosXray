@@ -45,6 +45,16 @@ func XraySetTunFd(fd C.int) {
 	_ = os.Setenv("XRAY_TUN_FD", s)
 }
 
+// XraySetAssetPath 设置 geoip.dat / geosite.dat 所在目录。
+//
+//export XraySetAssetPath
+func XraySetAssetPath(path *C.char) {
+	dir := C.GoString(path)
+	if dir != "" {
+		_ = os.Setenv("xray.location.asset", dir)
+	}
+}
+
 //export XrayStart
 func XrayStart(configJson *C.char) *C.char {
 	serverMu.Lock()

@@ -7,5 +7,7 @@
   "license": "",
   "dependencies": {
     "libxraybridge.so": "file:./src/main/cpp/types/libxraybridge"
-  }
+  },
+  "devDependencies": {},
+  "dynamicDependencies": {}
 }

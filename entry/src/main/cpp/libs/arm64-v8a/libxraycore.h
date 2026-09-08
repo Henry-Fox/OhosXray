@@ -101,6 +101,7 @@ extern "C" {
 #endif
 
 extern void XraySetTunFd(int fd);
+extern void XraySetAssetPath(char* path);
 extern char* XrayStart(char* configJson);
 extern void XrayStop(void);
 extern int XrayIsRunning(void);

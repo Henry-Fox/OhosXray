@@ -31,6 +31,8 @@ struct Index {
   @State activeId: string = '';
   @State connected: boolean = false;
   @State runMode: RunMode = 'vpn'; // 默认全局 VPN 模式
+  /** VPN 默认智能分流：国内直连，其余走代理 */
+  @State smartRoute: boolean = true;
   @State latencies: LatencyEntry[] = [];
   @State testingId: string = '';
 
@@ -89,9 +91,10 @@ struct Index {
   // ── 全局 VPN 模式 ──────────────────────────────────────────────
   private async startVpn(context: common.UIAbilityContext, profile: ServerProfile): Promise<void> {
     try {
-      await vpnController.start(context, profile);
+      await vpnController.start(context, profile, this.smartRoute);
       this.connected = true;
-      promptAction.showToast({ message: '全局 VPN 已启动', duration: 2500 });
+      const tip = this.smartRoute ? '智能分流已启动（国内直连）' : '全局代理已启动';
+      promptAction.showToast({ message: tip, duration: 2500 });
     } catch (e) {
       Logger.error(TAG, `startVpn failed: ${Logger.stringifyError(e as Error)}`);
       promptAction.showToast({ message: `VPN 启动失败: ${Logger.stringifyError(e as Error)}`, duration: 3000 });
@@ -260,6 +263,7 @@ struct Index {
           .height(34)
           .padding({ left: 16, right: 16 })
           .borderRadius(6)
+          .backgroundColor('#2ECC71')
           .onClick(() => { router.pushUrl({ url: 'pages/ServerEdit' }); })
       }
       .width('100%')
@@ -288,7 +292,34 @@ struct Index {
           .onClick(() => { this.runMode = 'local'; })
       }
       .width('100%')
-      .padding({ left: 16, right: 16, top: 4, bottom: 8 })
+      .padding({ left: 16, right: 16, top: 4, bottom: 4 })
+
+      // ── 分流策略（仅 VPN）──────────────────────────────────
+      if (this.runMode === 'vpn') {
+        Row() {
+          Text('分流策略')
+            .fontSize(13)
+            .fontColor('#666666')
+            .margin({ right: 12 })
+          Text('智能分流')
+            .fontSize(13)
+            .fontColor(this.smartRoute ? '#FFFFFF' : '#666666')
+            .backgroundColor(this.smartRoute ? '#2ECC71' : '#EEEEEE')
+            .padding({ left: 14, right: 14, top: 6, bottom: 6 })
+            .borderRadius(16)
+            .onClick(() => { this.smartRoute = true; })
+          Text('全局代理')
+            .fontSize(13)
+            .fontColor(!this.smartRoute ? '#FFFFFF' : '#666666')
+            .backgroundColor(!this.smartRoute ? '#2ECC71' : '#EEEEEE')
+            .padding({ left: 14, right: 14, top: 6, bottom: 6 })
+            .borderRadius(16)
+            .margin({ left: 8 })
+            .onClick(() => { this.smartRoute = false; })
+        }
+        .width('100%')
+        .padding({ left: 16, right: 16, top: 4, bottom: 8 })
+      }
 
       // ── Server list ─────────────────────────────────────────
       if (this.servers.length === 0) {
@@ -372,10 +403,10 @@ struct Index {
       Column({ space: 8 }) {
         if (this.connected) {
           if (this.runMode === 'vpn') {
-            Text('● 全局 VPN 已连接')
+            Text(this.smartRoute ? '● VPN 已连接 · 智能分流' : '● VPN 已连接 · 全局代理')
               .fontColor('#27AE60')
               .fontSize(14)
-            Text('所有应用流量已通过 TUN 接管')
+            Text(this.smartRoute ? '国内直连，其余走代理' : '所有流量走代理')
               .fontSize(12)
               .fontColor('#999999')
           } else {

@@ -3,6 +3,8 @@
     { "name": "module_desc", "value": "OHOS XClient entry module" },
     { "name": "EntryAbility_desc", "value": "main ability" },
     { "name": "EntryAbility_label", "value": "OHOS XClient" },
-    { "name": "vpn_permission_reason", "value": "用于建立VPN隧道以转发代理流量" }
+    { "name": "vpn_permission_reason", "value": "用于建立VPN隧道以转发代理流量" },
+    { "name": "camera_permission_reason", "value": "用于扫描节点分享二维码" },
+    { "name": "vibrate_permission_reason", "value": "用于扫码成功时的短振反馈" }
   ]
 }

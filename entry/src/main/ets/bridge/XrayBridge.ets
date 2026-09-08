@@ -9,9 +9,14 @@ export interface TrafficStats {
 }
 
 export class XrayBridge {
-  start(configJson: string, tunFd: number): boolean {
+  /**
+   * @param configJson Xray JSON 配置
+   * @param tunFd TUN fd；本地代理模式传 0
+   * @param assetPath geoip.dat / geosite.dat 目录，可空
+   */
+  start(configJson: string, tunFd: number, assetPath: string = ''): boolean {
     try {
-      const err = xraybridge.start(configJson, tunFd);
+      const err = xraybridge.start(configJson, tunFd, assetPath);
       if (err) {
         Logger.error(TAG, `start failed: ${err}`);
         return false;

@@ -11,24 +11,25 @@ const VPN_ABILITY_NAME = 'ProxyVpnAbility';
 export class VpnController {
   /**
    * 启动全局 VPN（TUN 模式）。
-   * 节点配置通过 want.parameters 传递给 VPN Extension 进程（API 22+ 支持）。
-   * 同时写入 Preferences 作为 fallback，兼容旧系统版本。
+   * @param smartRoute 默认 true：国内直连；false：全局走代理
    */
-  async start(context: common.UIAbilityContext, profile: ServerProfile): Promise<void> {
-    // 写入 Preferences 作为 fallback（extension 进程可跨进程读取）
+  async start(context: common.UIAbilityContext, profile: ServerProfile, smartRoute: boolean = true): Promise<void> {
+    // Preferences 为跨进程主通道：部分机型 Want.parameters 里的 profileJson 到不了 Extension
     await serverStore.init(context);
-    await serverStore.setPendingProfile(profile);
+    await serverStore.setPendingProfile(profile, smartRoute);
 
     const want: Want = {
       bundleName: BUNDLE_NAME,
       abilityName: VPN_ABILITY_NAME,
       parameters: {
-        profileJson: JSON.stringify(profile),
+        // 仍传一份作兼容；Extension 侧以 Preferences 兜底
+        smartRoute: smartRoute,
+        profileId: profile.id,
       }
     };
     try {
       await vpnExtension.startVpnExtensionAbility(want);
-      Logger.info(TAG, `requested VPN start for profile ${profile.remark}`);
+      Logger.info(TAG, `requested VPN start for profile ${profile.remark}, smartRoute=${smartRoute}`);
     } catch (e) {
       Logger.error(TAG, `startVpnExtensionAbility failed: ${Logger.stringifyError(e as Error)}`);
       throw e as Error;

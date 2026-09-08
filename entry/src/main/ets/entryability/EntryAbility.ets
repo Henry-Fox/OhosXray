@@ -3,6 +3,8 @@ import { window } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { Logger } from '../common/Logger';
 import { xrayBridge } from '../bridge/XrayBridge';
+import { GeoAssetHelper } from '../common/GeoAssetHelper';
+import { CnRouteHelper } from '../common/CnRouteHelper';
 
 const TAG = 'EntryAbility';
 const DOMAIN = 0x0001;
@@ -11,14 +13,19 @@ export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     Logger.init(this.context);
     hilog.info(DOMAIN, TAG, 'onCreate');
-    // Diagnostic: does the libxraybridge.so NAPI module load successfully in
-    // the MAIN process at all? (extension process showed "Cannot read
-    // property start of undefined" — need to know if this is process-specific
-    // or the native module never loads anywhere. XrayBridge.isRunning()
-    // internally try/catches and logs "isRunning native exception: ..." via
-    // Logger if the module is undefined here too.)
     const running = xrayBridge.isRunning();
     Logger.info(TAG, `diagnostic: xrayBridge.isRunning() in MAIN process returned ${running}`);
+    // 启动时后台拉 Loyalsoldier geo + 全量国内 CIDR
+    GeoAssetHelper.prepare(this.context).then(() => {
+      GeoAssetHelper.updateInBackground(this.context);
+    }).catch((e: Error) => {
+      Logger.warn(TAG, `geo prepare: ${e.message}`);
+    });
+    CnRouteHelper.prepare(this.context).then(() => {
+      CnRouteHelper.updateInBackground(this.context);
+    }).catch((e: Error) => {
+      Logger.warn(TAG, `cn prepare: ${e.message}`);
+    });
   }
 
   onDestroy(): void {

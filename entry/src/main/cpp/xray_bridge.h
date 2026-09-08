@@ -17,6 +17,8 @@ extern "C" {
     char* XrayQueryStats(const char* tag);
     // 在 Go runtime 内 os.Setenv 写入 TUN fd（C setenv 对本平台不可见）。
     void XraySetTunFd(int fd);
+    // 设置 geoip.dat / geosite.dat 目录（xray.location.asset）。
+    void XraySetAssetPath(const char* path);
     // 注册同步 protect 回调。Go 侧出站拨号时会同步调用此回调，
     // 返回 0 表示拦截（走 VPN），返回 1 表示不拦截（直连）。
     // 注意：鸿蒙 vpnConnection.protect(fd) 是异步的，无法在同步回调里
@@ -28,8 +30,9 @@ extern "C" {
 //   1. 把 tunFd 写入环境变量 xray.tun.fd（主）与 XRAY_TUN_FD（AltName 双保险），
 //      供 Xray 的 tun inbound 读取（platform.EnvFlag，OhosTun.NewTun 消费）；
 //      Xray 配置根级 env 也会写同一份。
-//   2. 调用Go导出的XrayStart，并安全释放其返回的C字符串。
-std::string XrayBridgeStart(const std::string& configJson, int tunFd);
+//   2. 可选设置 xray.location.asset（geoip.dat / geosite.dat）。
+//   3. 调用Go导出的XrayStart，并安全释放其返回的C字符串。
+std::string XrayBridgeStart(const std::string& configJson, int tunFd, const std::string& assetPath = "");
 void XrayBridgeStop();
 bool XrayBridgeIsRunning();
 std::string XrayBridgeQueryStats(const std::string& tag);

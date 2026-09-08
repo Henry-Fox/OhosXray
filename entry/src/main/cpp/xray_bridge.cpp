@@ -25,11 +25,15 @@ int DefaultProtectCallback(int fd) {
 
 }  // namespace
 
-std::string XrayBridgeStart(const std::string& configJson, int tunFd) {
+std::string XrayBridgeStart(const std::string& configJson, int tunFd, const std::string& assetPath) {
     // 关键：必须先走 Go 导出的 XraySetTunFd（内部 os.Setenv）。
     // 鸿蒙上 C setenv 对 Go runtime 的 os.LookupEnv 不可见，会导致
     // AndroidTun 读到 fd=0（stdin），TUN RX 恒为 0。
     XraySetTunFd(tunFd);
+
+    if (!assetPath.empty()) {
+        XraySetAssetPath(assetPath.c_str());
+    }
 
     // C setenv 保留作双保险（对部分工具链/诊断场景仍有用）。
     char fdBuf[16] = {0};
