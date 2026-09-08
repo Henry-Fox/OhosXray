@@ -1,0 +1,11 @@
+{
+  "name": "entry",
+  "version": "1.0.0",
+  "description": "OHOS XClient entry module",
+  "main": "",
+  "author": "",
+  "license": "",
+  "dependencies": {
+    "libxraybridge.so": "file:./src/main/cpp/types/libxraybridge"
+  }
+}

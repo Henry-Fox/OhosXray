@@ -1,0 +1,8 @@
+{
+  "string": [
+    { "name": "module_desc", "value": "OHOS XClient entry module" },
+    { "name": "EntryAbility_desc", "value": "main ability" },
+    { "name": "EntryAbility_label", "value": "OHOS XClient" },
+    { "name": "vpn_permission_reason", "value": "用于建立VPN隧道以转发代理流量" }
+  ]
+}

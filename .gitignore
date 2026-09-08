@@ -1,0 +1,47 @@
+/node_modules
+/oh_modules
+/local.properties
+/.idea
+**/build
+/.hvigor
+.cxx
+**/.cxx
+/.clangd
+/.clang-format
+/.clang-tidy
+**/.test
+/.appanalyzer
+/.codegenie
+
+# Local signing / SDK paths (never commit secrets)
+/build-profile.json5
+/local.properties
+
+# Native build caches & diagnostics
+/.gocache/
+/gotmp/
+/_diag/
+*.log
+live-hilog.txt
+full-buffer.txt
+nm.txt
+nm-err.txt
+disasm.txt
+full_debug.log
+
+# Built artifacts (publish via GitHub Releases instead)
+*.hap
+*.app
+*.hqf
+entry/libs/**/*.so
+entry/src/main/cpp/libs/**/*.so
+# keep headers if regenerated locally; ignore generated core header from go build if desired
+# entry/src/main/cpp/libs/**/libxraycore.h
+
+# OS / editor junk
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.swp
+*~
+
