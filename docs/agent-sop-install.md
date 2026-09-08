@@ -2,12 +2,16 @@
 
 面向 Cursor / Codex 等 Agent。按顺序执行；**不要跳过失败检查**。
 
+配套 Cursor Skill：`.cursor/skills/ohosxray-install/SKILL.md`（触发安装类请求时优先加载本 SOP）。
+
 ## 0. 硬约束（必须遵守）
 
-1. 本仓库产物是 **调试签名 HAP**，接收方必须 **开发者模式 + USB 调试**。  
-2. **禁止**协助绕过系统安装限制、伪造正式签名、规避应用市场审核。  
-3. 若用户要求「给陌生人不开开发者模式的正式包」：说明国内公开上架不现实，引导读 `docs/install-for-friends.md`，停止安装类越权方案。  
-4. 未获用户明确要求时：**不要** `git commit` / `git push` / 改签名口令。
+1. 先向用户标明：这是 **鸿蒙（HarmonyOS）系统级 VPN**（`VpnExtensionAbility` / TUN），不是普通本机代理 App。  
+2. 本仓库产物是 **调试签名 HAP**，接收方必须 **开发者模式 + USB 调试**。  
+3. **禁止**协助绕过系统安装限制、伪造正式签名、规避应用市场审核。  
+4. 若用户要求「给陌生人不开开发者模式的正式包」：说明国内公开上架不现实，引导读 `docs/install-for-friends.md`，停止安装类越权方案。  
+5. 未获用户明确要求时：**不要** `git commit` / `git push` / 改签名口令。  
+6. **主测机：HUAWEI Mate 80 Pro**；脚本与 VPN 流程已在该机验证。其他机型先按本 SOP 装，兼容问题如实汇报。
 
 ## 1. 前置检查
 
@@ -90,8 +94,9 @@ HAP：<路径>
 
 | 文件 | 用途 |
 |------|------|
-| `tools/install-ohosxray.ps1` | 半自动安装主逻辑 |
+| `tools/install-ohosxray.ps1` | 半自动安装主逻辑（Mate 80 Pro 已验） |
 | `tools/install-ohosxray.bat` | 双击入口 |
 | `docs/install-for-friends.md` | 熟人可读说明 |
 | `docs/tech-stack-with-versions.md` | 技术栈与切网重连约定 |
-| `README.md` | 总览与合规声明 |
+| `.cursor/skills/ohosxray-install/SKILL.md` | Cursor Agent Skill |
+| `README.md` | 总览与合规声明（标明鸿蒙 VPN） |

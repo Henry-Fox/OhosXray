@@ -1,10 +1,20 @@
 # OhosXray
 
-HarmonyOS / OpenHarmony 上的 **VPN Extension + Xray-core** 集成示例工程。  
-目标是演示如何在鸿蒙 `VpnExtensionAbility` 中接入 TUN，并把流量交给 Xray 用户态协议栈处理。
+**鸿蒙（HarmonyOS）系统级 VPN** 示例工程：`VpnExtensionAbility`（TUN）+ Xray-core。  
+面向 HarmonyOS NEXT 真机；也可参考用于 OpenHarmony 能力验证（扫码等 HMS 能力依赖 HarmonyOS）。
 
 > **重要：本仓库是技术学习与研究示例，不是面向普通消费者的网络加速产品，也不提供任何规避网络审查的指导。**  
 > 使用前请自行确认并遵守你所在地的法律法规与运营商规定。作者不对滥用导致的后果负责。
+
+## 一句话定位
+
+| 项 | 说明 |
+|----|------|
+| 是什么 | **鸿蒙系统 VPN**（系统授权的全局隧道），不是浏览器插件、也不是仅本机代理面板 |
+| 主测机 | **HUAWEI Mate 80 Pro**（已实测安装脚本、全局 VPN、智能分流） |
+| 怎么装 | 开发者模式 + USB 调试 → [`tools/install-ohosxray.bat`](tools/install-ohosxray.bat)（脚本已在主测机验证可用） |
+| 熟人说明 | [`docs/install-for-friends.md`](docs/install-for-friends.md) |
+| AI Agent | Cursor Skill：`.cursor/skills/ohosxray-install/`；SOP：[`docs/agent-sop-install.md`](docs/agent-sop-install.md) |
 
 ## 功能概览
 
@@ -36,10 +46,10 @@ HarmonyOS / OpenHarmony 上的 **VPN Extension + Xray-core** 集成示例工程�
 - **Agent 代装**：遵循 [`docs/agent-sop-install.md`](docs/agent-sop-install.md)。  
 - **不开开发者模式给陌生人正规商店包**：不在本项目范围内；也不提供绕过系统安装限制的方法。
 
-### 半自动安装（推荐）
+### 半自动安装（推荐，已在 Mate 80 Pro 验证）
 
 1. 手机开启 **开发者模式** 与 **USB 调试**，USB 连接电脑并点允许。  
-2. 从 [Releases](../../releases) 下载 `*.hap`，放到仓库根目录或 `release\`。  
+2. 从 [Releases](https://github.com/Henry-Fox/OhosXray/releases) 下载 `*.hap`，放到仓库根目录或 `release\`。  
 3. 双击：
 
 ```text
@@ -53,8 +63,13 @@ tools\install-ohosxray.bat
 .\tools\install-ohosxray.ps1 -HapPath .\release\your.hap
 ```
 
-4. 打开应用 → 添加节点 → 「全局 VPN」→ 默认「智能分流」→ 连接 → 允许 VPN。  
+脚本会自动查找 `hdc`、检测已连接设备、对最新/指定 HAP 执行 `hdc install -r`。  
+在 **Mate 80 Pro** 上按上述路径实测通过。
+
+4. 打开应用 → 添加节点 → 「全局 VPN」→ 默认「智能分流」→ 连接 → 允许系统 **VPN** 授权。  
 5. WiFi / 移动网络切换后会自动按新出口重连；若偶发失败，断开再连一次即可。
+
+更细的步骤与排错见 [`docs/install-for-friends.md`](docs/install-for-friends.md)。
 
 ### 手动 hdc（等价）
 
@@ -114,10 +129,12 @@ hdc install -r entry/build/default/outputs/default/entry-default-signed.hap
 
 ```
 AppScope/                 应用级配置
-entry/                    ArkTS UI、VpnExtension、NAPI 桥
+entry/                    ArkTS UI、鸿蒙 VpnExtension、NAPI 桥
 native-core/go-shim/      Go c-shared 封装与交叉编译脚本
 native-core/third_party/  本地 patch 依赖（如 gVisor Fstat 兼容）
-docs/                     技术栈文档
+tools/                    半自动安装脚本（bat / ps1）
+docs/                     技术栈、熟人安装、Agent SOP
+.cursor/skills/           Cursor Agent Skill（安装流程）
 ```
 
 ## License

@@ -57,10 +57,12 @@
   4. 软重启失败再全量 destroy/create VPN
 - **必须用含本逻辑的新 HAP 验证**；旧包日志不会出现 `net-reconnect=v2` / `netPoll` / `softRestart`
 
-## 分发定位（写死）
+## 产品定位与验证机
 
+- **鸿蒙系统级 VPN**（`VpnExtensionAbility` + TUN + Xray），非普通本机代理面板
+- **主测机：HUAWEI Mate 80 Pro**（安装脚本、全局 VPN、智能分流已验）
 - 仅调试签名 + 开发者模式；半自动安装见 `tools/install-ohosxray.*`
-- 熟人文档：`docs/install-for-friends.md`；Agent SOP：`docs/agent-sop-install.md`
+- 熟人文档：`docs/install-for-friends.md`；Agent SOP：`docs/agent-sop-install.md`；Cursor Skill：`.cursor/skills/ohosxray-install/`
 - 不提供绕过安装限制或应用市场上架规避指导
 
 ## 重建 Go 核心

@@ -1,19 +1,23 @@
 # 给熟人安装 OhosXray（半自动）
 
+> **这是鸿蒙（HarmonyOS）系统级 VPN 应用**（全局隧道，连接时系统会弹出 VPN 授权），不是普通 App 内代理。
+
 > **写死的定位（请先读）**  
 > - 本项目默认只提供 **调试签名 HAP**。  
 > - **不能**指望在国内应用市场给陌生人「点一下就装」的正式包（VPN/代理类合规与审核门槛极高；本仓库也不走上架路径）。  
 > - **不开开发者模式，就无法用本仓库的常规方式安装。**  
-> - 半自动脚本只帮你省掉手敲 `hdc`，**不绕过**系统安装限制。
+> - 半自动脚本只帮你省掉手敲 `hdc`，**不绕过**系统安装限制。  
+> - **主测机：HUAWEI Mate 80 Pro**；安装脚本已在该机验证可用。其他机型一般也可，但未逐一保证。
 
 ## 你需要准备
 
 | 物品 | 说明 |
 |------|------|
 | Windows 电脑 | 已装 [DevEco Studio](https://developer.huawei.com/consumer/cn/deveco-studio/) 或至少带 `hdc` 的 HarmonyOS SDK |
+| 鸿蒙手机 | 建议 HarmonyOS NEXT；主测 **Mate 80 Pro** |
 | USB 数据线 | 能传数据（充电线可能不行） |
 | 调试签名 HAP | 从 GitHub [Releases](https://github.com/Henry-Fox/OhosXray/releases) 下载，或自己用 DevEco 编出来 |
-| 本仓库里的脚本 | `tools\install-ohosxray.bat` / `tools\install-ohosxray.ps1` |
+| 本仓库里的脚本 | `tools\install-ohosxray.bat` / `tools\install-ohosxray.ps1`（已测） |
 
 ## 手机端（一次性）
 
