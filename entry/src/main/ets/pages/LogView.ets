@@ -2,6 +2,8 @@ import { router, promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { Logger } from '../common/Logger';
+import { UiTheme } from '../common/UiTheme';
+import { UiIcon } from '../common/UiIcon';
 
 @Entry
 @Component
@@ -36,33 +38,65 @@ struct LogView {
   build() {
     Column() {
       Row() {
-        Text('日志').fontSize(20).fontWeight(FontWeight.Bold).layoutWeight(1)
-        Button('返回').onClick(() => router.back())
+        Text('日志').fontSize(24).fontWeight(FontWeight.Bold).fontColor(UiTheme.fg).layoutWeight(1)
+        Button({ type: ButtonType.Normal }) {
+          Row({ space: 6 }) {
+            UiIcon({ src: $r('app.media.ic_back'), iconSize: 16, color: UiTheme.fg })
+            Text('返回').fontSize(13).fontWeight(FontWeight.Medium).fontColor(UiTheme.fg)
+          }
+        }
+        .height(36).padding({ left: 14, right: 14 })
+        .borderRadius(UiTheme.radiusPill).backgroundColor(UiTheme.secondary)
+        .onClick(() => router.back())
       }
       .width('100%')
-      .padding(16)
+      .padding({ left: 20, right: 20, top: 20, bottom: 12 })
 
-      Row({ space: 12 }) {
-        Button('刷新').onClick(() => this.refresh())
-        Button('复制全部').onClick(() => { this.copyToClipboard(); })
-        Button('清空').fontColor('#E74C3C').onClick(() => this.clear())
+      Row({ space: 8 }) {
+        Button({ type: ButtonType.Normal }) {
+          Row({ space: 6 }) {
+            UiIcon({ src: $r('app.media.ic_refresh'), iconSize: 15, color: UiTheme.fg })
+            Text('刷新').fontSize(13).fontWeight(FontWeight.Medium).fontColor(UiTheme.fg)
+          }
+        }
+        .layoutWeight(1).height(40).borderRadius(12).backgroundColor(UiTheme.secondary)
+        .onClick(() => this.refresh())
+
+        Button({ type: ButtonType.Normal }) {
+          Row({ space: 6 }) {
+            UiIcon({ src: $r('app.media.ic_copy'), iconSize: 15, color: UiTheme.accentFg })
+            Text('复制全部').fontSize(13).fontWeight(FontWeight.Medium).fontColor(UiTheme.accentFg)
+          }
+        }
+        .layoutWeight(1).height(40).borderRadius(12).backgroundColor(UiTheme.accent)
+        .onClick(() => { this.copyToClipboard(); })
+
+        Button({ type: ButtonType.Normal }) {
+          Row({ space: 6 }) {
+            UiIcon({ src: $r('app.media.ic_trash'), iconSize: 15, color: UiTheme.primaryFg })
+            Text('清空').fontSize(13).fontWeight(FontWeight.Medium).fontColor(UiTheme.primaryFg)
+          }
+        }
+        .layoutWeight(1).height(40).borderRadius(12).backgroundColor(UiTheme.destructive)
+        .onClick(() => this.clear())
       }
-      .padding({ left: 16, right: 16, bottom: 8 })
+      .width('100%')
+      .padding({ left: 20, right: 20, bottom: 12 })
 
       Scroll() {
-        Text(this.logText)
-          .fontSize(11)
-          .fontFamily('monospace')
-          .width('100%')
-          .textAlign(TextAlign.Start)
-          .padding(12)
+        Text(this.logText.length > 0 ? this.logText : '暂无日志')
+          .fontSize(11).fontFamily('monospace')
+          .fontColor(this.logText.length > 0 ? UiTheme.fg : UiTheme.mutedFg)
+          .width('100%').textAlign(TextAlign.Start).padding(16)
       }
-      .layoutWeight(1)
-      .width('100%')
-      .backgroundColor('#F5F5F5')
+      .layoutWeight(1).width('100%')
+      .margin({ left: 20, right: 20, bottom: 28 })
+      .borderRadius(UiTheme.radiusCard)
+      .border({ width: 1, color: UiTheme.border })
+      .backgroundColor(UiTheme.card)
       .align(Alignment.TopStart)
+      .clip(true)
     }
-    .width('100%')
-    .height('100%')
+    .width('100%').height('100%').backgroundColor(UiTheme.bg)
   }
 }

@@ -47,8 +47,10 @@ const TUN_IPV4_PREFIX = 30;
 const MTU = 1500;
 
 const LOG_PUMP_INTERVAL_MS = 2000;
-/** 切网诊断需要更长窗口；平时也持续泵一段时间 */
-const LOG_PUMP_TICKS = 90; // ~3 分钟
+/** 仅短窗泵 error（不再泵 access，避免撑爆 app.log） */
+const LOG_PUMP_TICKS = 30; // ~1 分钟
+/** Xray error 日志滚动上限 */
+const XRAY_LOG_MAX_SIZE = 1024 * 1024; // 1MB
 
 /** 事件 debounce */
 const NET_RECONNECT_DEBOUNCE_MS = 1500;
@@ -71,11 +73,13 @@ export default class ProxyVpnAbility extends VpnExtensionAbility {
 
   private logPumpTimer: number = -1;
   private errChars: number = 0;
-  private accChars: number = 0;
+  private logRotateTimer: number = -1;
 
   async onCreate(want: Want): Promise<void> {
     Logger.init(this.context as common.Context);
     Logger.info(TAG, 'onCreate: starting TUN mode (net-reconnect=v2-soft+poll)');
+    this.rotateXrayLogsIfNeeded(true);
+    this.startXrayLogRotateWatch();
 
     await serverStore.init(this.context as common.Context);
 
@@ -138,6 +142,7 @@ export default class ProxyVpnAbility extends VpnExtensionAbility {
     this.stopNetPoll();
     this.unregisterNetWatcher();
     this.stopXrayLogPump();
+    this.stopXrayLogRotateWatch();
     this.sessionActive = false;
     this.currentTunFd = -1;
     xrayBridge.stop();
@@ -561,12 +566,10 @@ export default class ProxyVpnAbility extends VpnExtensionAbility {
   private startXrayLogPump(): void {
     this.stopXrayLogPump();
     this.errChars = 0;
-    this.accChars = 0;
     let ticks = 0;
     this.logPumpTimer = setInterval(() => {
       ticks++;
-      this.pumpFile('xray-error.log', false);
-      this.pumpFile('xray-access.log', true);
+      this.pumpErrorLog();
       if (ticks >= LOG_PUMP_TICKS) {
         this.stopXrayLogPump();
       }
@@ -580,28 +583,68 @@ export default class ProxyVpnAbility extends VpnExtensionAbility {
     }
   }
 
-  private pumpFile(fileName: string, isAccess: boolean): void {
+  private startXrayLogRotateWatch(): void {
+    this.stopXrayLogRotateWatch();
+    this.logRotateTimer = setInterval(() => {
+      this.rotateXrayLogsIfNeeded(false);
+    }, 30000);
+  }
+
+  private stopXrayLogRotateWatch(): void {
+    if (this.logRotateTimer !== -1) {
+      clearInterval(this.logRotateTimer);
+      this.logRotateTimer = -1;
+    }
+  }
+
+  /**
+   * 滚动截断 Xray 落盘日志，避免无限增长。
+   */
+  private rotateXrayLogsIfNeeded(forceCleanAccess: boolean): void {
+    const names: string[] = ['xray-error.log', 'xray-access.log'];
+    for (let i = 0; i < names.length; i++) {
+      const path = `${this.context.filesDir}/${names[i]}`;
+      try {
+        if (!fs.accessSync(path)) {
+          continue;
+        }
+        const st = fs.statSync(path);
+        const isAccess = names[i].indexOf('access') >= 0;
+        if (forceCleanAccess && isAccess) {
+          fs.unlinkSync(path);
+          Logger.info(TAG, `removed stale ${names[i]}`);
+          continue;
+        }
+        if (st.size > XRAY_LOG_MAX_SIZE) {
+          const f = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE | fs.OpenMode.TRUNC);
+          fs.closeSync(f);
+          if (!isAccess) {
+            this.errChars = 0;
+          }
+          Logger.info(TAG, `rotated ${names[i]} oldSize=${st.size}`);
+        }
+      } catch (_e) {
+        // ignore
+      }
+    }
+  }
+
+  private pumpErrorLog(): void {
     try {
-      const path = `${this.context.filesDir}/${fileName}`;
+      const path = `${this.context.filesDir}/xray-error.log`;
       if (!fs.accessSync(path)) {
         return;
       }
       const full: string = fs.readTextSync(path);
-      const start: number = isAccess ? this.accChars : this.errChars;
-      if (full.length <= start) {
+      if (full.length <= this.errChars) {
         return;
       }
-      const chunk: string = full.substring(start);
-      if (isAccess) {
-        this.accChars = full.length;
-      } else {
-        this.errChars = full.length;
-      }
-      const label = isAccess ? 'xray-access' : 'xray-error';
+      const chunk: string = full.substring(this.errChars);
+      this.errChars = full.length;
       let off = 0;
       while (off < chunk.length) {
         const piece = chunk.substring(off, off + 1800);
-        Logger.info(TAG, `[${label}] ${piece}`);
+        Logger.info(TAG, `[xray-error] ${piece}`);
         off += 1800;
       }
     } catch (_e) {

@@ -47,6 +47,12 @@
 - geo 域名/IP 库：`geosite.dat` / `geoip.dat`（Loyalsoldier 全量），后台自动更新
 - UI：智能分流 / 全局代理
 
+## 日志滚动
+
+- pp.log：超过 512KB 截断重写
+- xray-error.log：超过 1MB 截断；启动时清理旧 xray-access.log
+- TUN 模式 Xray loglevel=warning，不再写 access 流量日志（避免冲掉诊断）
+
 ## 切网自动重连
 
 - 根因：`sendThrough` 绑死启动时物理 IPv4；切网后出现 `bind: cannot assign requested address`

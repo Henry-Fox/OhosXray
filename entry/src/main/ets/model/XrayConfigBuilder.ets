@@ -383,9 +383,8 @@ export function buildXrayConfig(profile: ServerProfile, options: XrayBuildOption
   // 日志：tun 模式开 debug 并落盘到应用 filesDir（Go 日志默认写 stderr，
   // NAPI 环境下会丢失，必须写文件才能用 hdc file pull 回读诊断）；
   // local 模式保持 info 且不落盘。
-  const logConfig: XrayLogConfig = { loglevel: options.mode === 'tun' ? 'debug' : 'info' };
+  const logConfig: XrayLogConfig = { loglevel: options.mode === 'tun' ? 'warning' : 'info' };
   if (options.mode === 'tun' && options.logDir && options.logDir.length > 0) {
-    logConfig.access = `${options.logDir}/xray-access.log`;
     logConfig.error = `${options.logDir}/xray-error.log`;
   }
 

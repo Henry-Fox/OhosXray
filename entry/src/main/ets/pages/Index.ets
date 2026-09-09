@@ -8,10 +8,10 @@ import { xrayBridge } from '../bridge/XrayBridge';
 import { vpnController } from '../common/VpnController';
 import { buildXrayConfig } from '../model/XrayConfigBuilder';
 import { Logger } from '../common/Logger';
+import { UiTheme } from '../common/UiTheme';
+import { UiIcon } from '../common/UiIcon';
 
 const TAG = 'Index';
-
-// 本地代理模式的监听地址
 const SOCKS_LISTEN = '127.0.0.1';
 const SOCKS_PORT = 10808;
 const HTTP_LISTEN = '127.0.0.1';
@@ -21,7 +21,7 @@ type RunMode = 'vpn' | 'local';
 
 interface LatencyEntry {
   id: string;
-  ms: number; // -1 = timeout/error
+  ms: number;
 }
 
 @Entry
@@ -30,7 +30,7 @@ struct Index {
   @State servers: ServerProfile[] = [];
   @State activeId: string = '';
   @State connected: boolean = false;
-  @State runMode: RunMode = 'vpn'; // 默认全局 VPN 模式
+  @State runMode: RunMode = 'vpn';
   /** VPN 默认智能分流：国内直连，其余走代理 */
   @State smartRoute: boolean = true;
   @State latencies: LatencyEntry[] = [];
@@ -59,7 +59,6 @@ struct Index {
     } else {
       this.activeId = '';
     }
-    // 本地模式下 xray 跑在本进程，可直接查询状态
     if (this.runMode === 'local') {
       this.connected = xrayBridge.isRunning();
     }
@@ -68,7 +67,6 @@ struct Index {
   private async onToggleConnect(): Promise<void> {
     const active = this.servers.find(s => s.id === this.activeId);
     const context = getContext(this) as common.UIAbilityContext;
-
     if (!this.connected) {
       if (!active) {
         promptAction.showToast({ message: '请先添加并选中一个节点', duration: 2000 });
@@ -88,7 +86,6 @@ struct Index {
     }
   }
 
-  // ── 全局 VPN 模式 ──────────────────────────────────────────────
   private async startVpn(context: common.UIAbilityContext, profile: ServerProfile): Promise<void> {
     try {
       await vpnController.start(context, profile, this.smartRoute);
@@ -112,7 +109,6 @@ struct Index {
     }
   }
 
-  // ── 本地代理模式 ──────────────────────────────────────────────
   private async startLocal(profile: ServerProfile): Promise<void> {
     try {
       const configJson = buildXrayConfig(profile, {
@@ -122,7 +118,6 @@ struct Index {
         httpListen: HTTP_LISTEN,
         httpPort: HTTP_PORT
       });
-      Logger.info(TAG, `local xray config length=${configJson.length}`);
       const ok = xrayBridge.start(configJson, 0);
       if (!ok) {
         promptAction.showToast({ message: '启动失败，请查看日志', duration: 3000 });
@@ -167,17 +162,14 @@ struct Index {
       message: `删除节点"${item.remark}"？`,
       primaryButton: {
         value: '删除',
-        fontColor: '#E74C3C',
+        fontColor: UiTheme.destructive,
         action: () => {
           this.doDeleteServer(item.id).catch((e: Error) => {
             Logger.error(TAG, `delete server failed: ${e.message}`);
           });
         }
       },
-      secondaryButton: {
-        value: '取消',
-        action: () => {}
-      }
+      secondaryButton: { value: '取消', action: () => {} }
     });
   }
 
@@ -192,7 +184,9 @@ struct Index {
   }
 
   private async testLatency(profile: ServerProfile): Promise<void> {
-    if (this.testingId !== '') return;
+    if (this.testingId !== '') {
+      return;
+    }
     this.testingId = profile.id;
     const start = Date.now();
     const httpReq = http.createHttp();
@@ -228,229 +222,273 @@ struct Index {
   }
 
   private latencyText(id: string): string {
+    if (this.testingId === id) {
+      return '测速中';
+    }
     const ms = this.getLatencyMs(id);
-    if (ms === undefined) return '';
-    if (ms < 0) return '超时';
+    if (ms === undefined) {
+      return '未测速';
+    }
+    if (ms < 0) {
+      return '超时';
+    }
     return `${ms}ms`;
   }
 
-  private latencyColor(id: string): string {
+  private latencyColor(id: string): ResourceColor {
+    if (this.testingId === id) {
+      return UiTheme.mutedFg;
+    }
     const ms = this.getLatencyMs(id);
-    if (ms === undefined || ms < 0) return '#E74C3C';
-    if (ms < 200) return '#27AE60';
-    if (ms < 500) return '#E67E22';
-    return '#E74C3C';
+    if (ms === undefined || ms < 0) {
+      return UiTheme.mutedFg;
+    }
+    if (ms < 150) {
+      return UiTheme.primary;
+    }
+    if (ms < 300) {
+      return UiTheme.warn;
+    }
+    return UiTheme.destructive;
   }
 
   build() {
     Column() {
-      // ── Header ──────────────────────────────────────────────
       Row() {
         Text('节点')
-          .fontSize(20)
+          .fontSize(24)
           .fontWeight(FontWeight.Bold)
+          .fontColor(UiTheme.fg)
           .layoutWeight(1)
-        Button('日志', { type: ButtonType.Normal })
-          .fontSize(14)
-          .height(34)
-          .padding({ left: 16, right: 16 })
-          .borderRadius(6)
-          .backgroundColor('#999999')
-          .margin({ right: 8 })
-          .onClick(() => { router.pushUrl({ url: 'pages/LogView' }); })
-        Button('添加', { type: ButtonType.Normal })
-          .fontSize(14)
-          .height(34)
-          .padding({ left: 16, right: 16 })
-          .borderRadius(6)
-          .backgroundColor('#2ECC71')
-          .onClick(() => { router.pushUrl({ url: 'pages/ServerEdit' }); })
+
+        Button({ type: ButtonType.Normal }) {
+          Row({ space: 6 }) {
+            UiIcon({ src: $r('app.media.ic_log'), iconSize: 16, color: UiTheme.fg })
+            Text('日志').fontSize(13).fontWeight(FontWeight.Medium).fontColor(UiTheme.fg)
+          }
+        }
+        .height(36)
+        .padding({ left: 14, right: 14 })
+        .borderRadius(UiTheme.radiusPill)
+        .backgroundColor(UiTheme.secondary)
+        .margin({ right: 8 })
+        .onClick(() => { router.pushUrl({ url: 'pages/LogView' }); })
+
+        Button({ type: ButtonType.Normal }) {
+          Row({ space: 6 }) {
+            UiIcon({ src: $r('app.media.ic_plus'), iconSize: 16, color: UiTheme.primaryFg })
+            Text('添加').fontSize(13).fontWeight(FontWeight.Medium).fontColor(UiTheme.primaryFg)
+          }
+        }
+        .height(36)
+        .padding({ left: 14, right: 14 })
+        .borderRadius(UiTheme.radiusPill)
+        .backgroundColor(UiTheme.primary)
+        .onClick(() => { router.pushUrl({ url: 'pages/ServerEdit' }); })
       }
       .width('100%')
-      .padding({ left: 16, right: 16, top: 16, bottom: 8 })
+      .padding({ left: 20, right: 20, top: 20, bottom: 12 })
 
-      // ── 模式切换 ────────────────────────────────────────────
-      Row() {
-        Text('运行模式')
-          .fontSize(13)
-          .fontColor('#666666')
-          .margin({ right: 12 })
-        Text('全局 VPN')
-          .fontSize(13)
-          .fontColor(this.runMode === 'vpn' ? '#FFFFFF' : '#666666')
-          .backgroundColor(this.runMode === 'vpn' ? '#2ECC71' : '#EEEEEE')
-          .padding({ left: 14, right: 14, top: 6, bottom: 6 })
-          .borderRadius(16)
-          .onClick(() => { this.runMode = 'vpn'; })
-        Text('本地代理')
-          .fontSize(13)
-          .fontColor(this.runMode === 'local' ? '#FFFFFF' : '#666666')
-          .backgroundColor(this.runMode === 'local' ? '#3498DB' : '#EEEEEE')
-          .padding({ left: 14, right: 14, top: 6, bottom: 6 })
-          .borderRadius(16)
-          .margin({ left: 8 })
-          .onClick(() => { this.runMode = 'local'; })
-      }
-      .width('100%')
-      .padding({ left: 16, right: 16, top: 4, bottom: 4 })
-
-      // ── 分流策略（仅 VPN）──────────────────────────────────
-      if (this.runMode === 'vpn') {
+      Column({ space: 12 }) {
         Row() {
-          Text('分流策略')
-            .fontSize(13)
-            .fontColor('#666666')
-            .margin({ right: 12 })
-          Text('智能分流')
-            .fontSize(13)
-            .fontColor(this.smartRoute ? '#FFFFFF' : '#666666')
-            .backgroundColor(this.smartRoute ? '#2ECC71' : '#EEEEEE')
-            .padding({ left: 14, right: 14, top: 6, bottom: 6 })
-            .borderRadius(16)
-            .onClick(() => { this.smartRoute = true; })
-          Text('全局代理')
-            .fontSize(13)
-            .fontColor(!this.smartRoute ? '#FFFFFF' : '#666666')
-            .backgroundColor(!this.smartRoute ? '#2ECC71' : '#EEEEEE')
-            .padding({ left: 14, right: 14, top: 6, bottom: 6 })
-            .borderRadius(16)
-            .margin({ left: 8 })
-            .onClick(() => { this.smartRoute = false; })
+          Text('运行模式').width(72).fontSize(13).fontWeight(FontWeight.Medium).fontColor(UiTheme.mutedFg)
+          Row() {
+            Text('全局 VPN')
+              .layoutWeight(1).textAlign(TextAlign.Center).fontSize(13).fontWeight(FontWeight.Medium)
+              .fontColor(this.runMode === 'vpn' ? UiTheme.primaryFg : UiTheme.mutedFg)
+              .backgroundColor(this.runMode === 'vpn' ? UiTheme.primary : Color.Transparent)
+              .borderRadius(UiTheme.radiusPill).padding({ top: 8, bottom: 8 })
+              .onClick(() => { this.runMode = 'vpn'; })
+            Text('本地代理')
+              .layoutWeight(1).textAlign(TextAlign.Center).fontSize(13).fontWeight(FontWeight.Medium)
+              .fontColor(this.runMode === 'local' ? UiTheme.primaryFg : UiTheme.mutedFg)
+              .backgroundColor(this.runMode === 'local' ? UiTheme.primary : Color.Transparent)
+              .borderRadius(UiTheme.radiusPill).padding({ top: 8, bottom: 8 })
+              .onClick(() => { this.runMode = 'local'; })
+          }
+          .layoutWeight(1).padding(4).backgroundColor(UiTheme.muted).borderRadius(UiTheme.radiusPill)
         }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 4, bottom: 8 })
-      }
+        .width('100%').alignItems(VerticalAlign.Center)
 
-      // ── Server list ─────────────────────────────────────────
-      if (this.servers.length === 0) {
-        Column({ space: 8 }) {
-          Text('暂无节点').fontColor('#999999').fontSize(16)
-          Text('点击右上角「添加」按钮导入节点').fontColor('#BBBBBB').fontSize(13)
+        if (this.runMode === 'vpn') {
+          Row() {
+            Text('分流策略').width(72).fontSize(13).fontWeight(FontWeight.Medium).fontColor(UiTheme.mutedFg)
+            Row() {
+              Text('智能分流')
+                .layoutWeight(1).textAlign(TextAlign.Center).fontSize(13).fontWeight(FontWeight.Medium)
+                .fontColor(this.smartRoute ? UiTheme.primaryFg : UiTheme.mutedFg)
+                .backgroundColor(this.smartRoute ? UiTheme.primary : Color.Transparent)
+                .borderRadius(UiTheme.radiusPill).padding({ top: 8, bottom: 8 })
+                .onClick(() => { this.smartRoute = true; })
+              Text('全局代理')
+                .layoutWeight(1).textAlign(TextAlign.Center).fontSize(13).fontWeight(FontWeight.Medium)
+                .fontColor(!this.smartRoute ? UiTheme.primaryFg : UiTheme.mutedFg)
+                .backgroundColor(!this.smartRoute ? UiTheme.primary : Color.Transparent)
+                .borderRadius(UiTheme.radiusPill).padding({ top: 8, bottom: 8 })
+                .onClick(() => { this.smartRoute = false; })
+            }
+            .layoutWeight(1).padding(4).backgroundColor(UiTheme.muted).borderRadius(UiTheme.radiusPill)
+          }
+          .width('100%').alignItems(VerticalAlign.Center)
         }
-        .layoutWeight(1)
-        .justifyContent(FlexAlign.Center)
-        .width('100%')
+      }
+      .width('100%')
+      .padding({ left: 20, right: 20, bottom: 8 })
+
+      if (this.servers.length === 0) {
+        Column({ space: 12 }) {
+          Column() {
+            UiIcon({ src: $r('app.media.ic_signal'), iconSize: 28, color: UiTheme.mutedFg })
+          }
+          .width(64).height(64).justifyContent(FlexAlign.Center)
+          .borderRadius(UiTheme.radiusCard).backgroundColor(UiTheme.muted)
+
+          Text('还没有节点').fontSize(14).fontWeight(FontWeight.Medium).fontColor(UiTheme.fg)
+          Text('点击右上角「添加」导入你的第一个节点').fontSize(12).fontColor(UiTheme.mutedFg)
+
+          Button({ type: ButtonType.Normal }) {
+            Row({ space: 6 }) {
+              UiIcon({ src: $r('app.media.ic_plus'), iconSize: 16, color: UiTheme.primaryFg })
+              Text('添加节点').fontSize(13).fontWeight(FontWeight.Medium).fontColor(UiTheme.primaryFg)
+            }
+          }
+          .height(40).padding({ left: 20, right: 20 })
+          .borderRadius(UiTheme.radiusPill).backgroundColor(UiTheme.primary).margin({ top: 4 })
+          .onClick(() => { router.pushUrl({ url: 'pages/ServerEdit' }); })
+        }
+        .layoutWeight(1).justifyContent(FlexAlign.Center).width('100%').padding({ bottom: 80 })
       } else {
-        List() {
+        List({ space: 12 }) {
           ForEach(this.servers, (item: ServerProfile) => {
             ListItem() {
               Column() {
-                // ── Top row: radio + name + latency badge ────
-                Row({ space: 8 }) {
+                Row({ space: 12 }) {
                   Radio({ value: item.id, group: 'server' })
                     .checked(item.id === this.activeId)
+                    .radioStyle({
+                      checkedBackgroundColor: UiTheme.primary,
+                      uncheckedBorderColor: UiTheme.dotOff
+                    })
                     .onChange((checked: boolean) => {
                       if (checked) { this.onSelect(item.id); }
                     })
                   Column({ space: 2 }) {
                     Text(item.remark)
-                      .fontSize(15)
-                      .fontWeight(FontWeight.Medium)
-                      .maxLines(1)
+                      .fontSize(15).fontWeight(FontWeight.Medium).fontColor(UiTheme.fg)
+                      .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
                     Text(`${item.protocol} · ${item.address}:${item.port}`)
-                      .fontSize(12)
-                      .fontColor('#999999')
-                      .maxLines(1)
+                      .fontSize(12).fontColor(UiTheme.mutedFg).fontFamily('monospace')
+                      .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
                   }
-                  .alignItems(HorizontalAlign.Start)
-                  .layoutWeight(1)
+                  .alignItems(HorizontalAlign.Start).layoutWeight(1)
 
-                  if (this.getLatencyMs(item.id) !== undefined) {
-                    Text(this.latencyText(item.id))
-                      .fontSize(12)
-                      .fontColor(this.latencyColor(item.id))
-                      .backgroundColor('#F5F5F5')
-                      .borderRadius(4)
-                      .padding({ left: 6, right: 6, top: 2, bottom: 2 })
-                  }
+                  Text(this.latencyText(item.id))
+                    .fontSize(12).fontWeight(FontWeight.Medium)
+                    .fontColor(this.latencyColor(item.id)).fontFamily('monospace')
+                    .backgroundColor(UiTheme.muted).borderRadius(UiTheme.radiusPill)
+                    .padding({ left: 10, right: 10, top: 4, bottom: 4 })
                 }
                 .width('100%')
-                .padding({ left: 12, right: 12, top: 10, bottom: 4 })
 
-                // ── Bottom row: action buttons ───────────────
+                Divider().color(UiTheme.border).margin({ top: 12, bottom: 8 })
+
                 Row() {
                   Blank()
-                  Text(this.testingId === item.id ? '测速中…' : '测速')
-                    .fontSize(13)
-                    .fontColor(this.testingId === item.id ? '#AAAAAA' : '#3498DB')
-                    .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-                    .onClick(() => { this.testLatency(item); })
-                  Text('编辑')
-                    .fontSize(13)
-                    .fontColor('#555555')
-                    .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-                    .onClick(() => { this.onEditServer(item); })
-                  Text('删除')
-                    .fontSize(13)
-                    .fontColor('#E74C3C')
-                    .padding({ left: 10, right: 14, top: 5, bottom: 5 })
-                    .onClick(() => { this.onDeleteServer(item); })
+                  Row({ space: 4 }) {
+                    UiIcon({
+                      src: $r('app.media.ic_gauge'),
+                      iconSize: 15,
+                      color: this.testingId === item.id ? UiTheme.mutedFg : UiTheme.accent
+                    })
+                    Text(this.testingId === item.id ? '测速中…' : '测速')
+                      .fontSize(13).fontWeight(FontWeight.Medium)
+                      .fontColor(this.testingId === item.id ? UiTheme.mutedFg : UiTheme.accent)
+                  }
+                  .padding({ left: 10, right: 10, top: 6, bottom: 6 }).borderRadius(8)
+                  .onClick(() => { this.testLatency(item); })
+
+                  Row({ space: 4 }) {
+                    UiIcon({ src: $r('app.media.ic_pencil'), iconSize: 15, color: UiTheme.mutedFg })
+                    Text('编辑').fontSize(13).fontWeight(FontWeight.Medium).fontColor(UiTheme.mutedFg)
+                  }
+                  .padding({ left: 10, right: 10, top: 6, bottom: 6 }).borderRadius(8)
+                  .onClick(() => { this.onEditServer(item); })
+
+                  Row({ space: 4 }) {
+                    UiIcon({ src: $r('app.media.ic_trash'), iconSize: 15, color: UiTheme.destructive })
+                    Text('删除').fontSize(13).fontWeight(FontWeight.Medium).fontColor(UiTheme.destructive)
+                  }
+                  .padding({ left: 10, right: 4, top: 6, bottom: 6 }).borderRadius(8)
+                  .onClick(() => { this.onDeleteServer(item); })
                 }
                 .width('100%')
-                .padding({ bottom: 4 })
               }
-              .width('100%')
-              .backgroundColor(item.id === this.activeId ? '#F0FFF4' : '#FFFFFF')
+              .width('100%').padding(16).backgroundColor(UiTheme.card)
+              .borderRadius(UiTheme.radiusCard)
+              .border({
+                width: item.id === this.activeId ? 1.5 : 1,
+                color: item.id === this.activeId ? UiTheme.selectedBorder : UiTheme.border
+              })
             }
           }, (item: ServerProfile) => item.id)
         }
-        .layoutWeight(1)
-        .width('100%')
-        .divider({ strokeWidth: 0.5, color: '#EEEEEE', startMargin: 12, endMargin: 12 })
+        .layoutWeight(1).width('100%')
+        .padding({ left: 20, right: 20, top: 4, bottom: 8 })
+        .scrollBar(BarState.Off)
       }
 
-      // ── Connect area ─────────────────────────────────────────
-      Column({ space: 8 }) {
-        if (this.connected) {
-          if (this.runMode === 'vpn') {
-            Text(this.smartRoute ? '● VPN 已连接 · 智能分流' : '● VPN 已连接 · 全局代理')
-              .fontColor('#27AE60')
-              .fontSize(14)
-            Text(this.smartRoute ? '国内直连，其余走代理' : '所有流量走代理')
-              .fontSize(12)
-              .fontColor('#999999')
-          } else {
-            Text('● 本机代理已启动')
-              .fontColor('#27AE60')
-              .fontSize(14)
-            Row({ space: 8 }) {
-              Text(`HTTP  ${HTTP_LISTEN}:${HTTP_PORT}`)
-                .fontSize(13)
-                .fontColor('#666666')
-              Text('复制')
-                .fontSize(13)
-                .fontColor('#3498DB')
-                .onClick(() => { this.copyProxyAddress(`${HTTP_LISTEN}:${HTTP_PORT}`); })
-            }
-            Row({ space: 8 }) {
-              Text(`SOCKS5  ${SOCKS_LISTEN}:${SOCKS_PORT}`)
-                .fontSize(13)
-                .fontColor('#666666')
-              Text('复制')
-                .fontSize(13)
-                .fontColor('#3498DB')
-                .onClick(() => { this.copyProxyAddress(`${SOCKS_LISTEN}:${SOCKS_PORT}`); })
-            }
-            Text('系统 WLAN 手动代理只支持 HTTP，请填 HTTP 地址；浏览器自带代理设置一般支持 SOCKS5')
-              .fontSize(11)
-              .fontColor('#999999')
-              .textAlign(TextAlign.Center)
-              .width('85%')
+      Column({ space: 6 }) {
+        if (this.runMode === 'vpn') {
+          Row({ space: 8 }) {
+            Circle({ width: 10, height: 10 })
+              .fill(this.connected ? UiTheme.primary : UiTheme.dotOff)
+            Text(this.connected ? 'VPN 已连接' : 'VPN 未连接')
+              .fontSize(14).fontWeight(FontWeight.Medium)
+              .fontColor(this.connected ? UiTheme.fg : UiTheme.mutedFg)
+            Text('·').fontColor(UiTheme.mutedFg)
+            Text(this.smartRoute ? '智能分流' : '全局代理')
+              .fontSize(14).fontWeight(FontWeight.Medium).fontColor(UiTheme.primary)
+          }
+          Text(this.smartRoute ? '国内直连，其余走代理' : '所有流量均通过代理节点')
+            .fontSize(12).fontColor(UiTheme.mutedFg)
+        } else if (this.connected) {
+          Text('本机代理已启动').fontSize(14).fontWeight(FontWeight.Medium).fontColor(UiTheme.fg)
+          Row({ space: 8 }) {
+            Text(`HTTP  ${HTTP_LISTEN}:${HTTP_PORT}`).fontSize(12).fontColor(UiTheme.mutedFg).fontFamily('monospace')
+            Text('复制').fontSize(12).fontColor(UiTheme.accent)
+              .onClick(() => { this.copyProxyAddress(`${HTTP_LISTEN}:${HTTP_PORT}`); })
+          }
+          Row({ space: 8 }) {
+            Text(`SOCKS5  ${SOCKS_LISTEN}:${SOCKS_PORT}`).fontSize(12).fontColor(UiTheme.mutedFg).fontFamily('monospace')
+            Text('复制').fontSize(12).fontColor(UiTheme.accent)
+              .onClick(() => { this.copyProxyAddress(`${SOCKS_LISTEN}:${SOCKS_PORT}`); })
+          }
+        } else {
+          Text('本地代理未启动').fontSize(14).fontWeight(FontWeight.Medium).fontColor(UiTheme.mutedFg)
+          Text('需在系统或应用中手动填写代理地址').fontSize(12).fontColor(UiTheme.mutedFg)
+        }
+
+        Button({ type: ButtonType.Normal }) {
+          Row({ space: 8 }) {
+            UiIcon({ src: $r('app.media.ic_power'), iconSize: 20, color: UiTheme.primaryFg })
+            Text(this.connected ? '断开' : '连接')
+              .fontSize(16).fontWeight(FontWeight.Bold).fontColor(UiTheme.primaryFg)
           }
         }
-        Button(this.connected ? '断开' : '连接')
-          .width('90%')
-          .height(50)
-          .fontSize(17)
-          .backgroundColor(this.connected ? '#E74C3C' : (this.runMode === 'vpn' ? '#2ECC71' : '#3498DB'))
-          .onClick(() => { this.onToggleConnect(); })
+        .width('100%').height(52).borderRadius(UiTheme.radiusBtn)
+        .backgroundColor(this.connected ? UiTheme.destructive : UiTheme.primary)
+        .enabled(this.connected || this.activeId !== '')
+        .opacity((this.connected || this.activeId !== '') ? 1 : 0.45)
+        .margin({ top: 8 })
+        .onClick(() => { this.onToggleConnect(); })
       }
-      .padding({ top: 12, bottom: 32 })
       .width('100%')
+      .padding({ left: 20, right: 20, top: 12, bottom: 28 })
       .alignItems(HorizontalAlign.Center)
+      .backgroundColor(UiTheme.bg)
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F5F5F5')
+    .backgroundColor(UiTheme.bg)
   }
 }

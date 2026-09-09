@@ -45,3 +45,7 @@ Desktop.ini
 *.swp
 *~
 
+
+# v0 design reference extract
+/_v0_ref/
+

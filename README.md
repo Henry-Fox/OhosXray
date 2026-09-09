@@ -24,9 +24,12 @@
 - 本地代理模式：本机 SOCKS5 / HTTP（需手动配置系统或应用代理）
 - 支持导入常见 `vmess://` / `vless://` 分享链接（以你的节点配置为准）
 - geoip / geosite / 国内 CIDR 列表可后台自动更新（约 24h）
+- UI：浅绿主题 / 深色跟随系统、按钮图标、应用图标
+- 切网自动重绑出口（WiFi ↔ 蜂窝）；日志滚动上限（避免无限涨）
 - Native：ArkTS + NAPI + Go `c-shared`（`libxraycore.so`）
 
-技术栈与版本见 [`docs/tech-stack-with-versions.md`](docs/tech-stack-with-versions.md)。
+技术栈与版本见 [`docs/tech-stack-with-versions.md`](docs/tech-stack-with-versions.md)。  
+朋友圈宣传文案与配图见 [`docs/moments-promo.md`](docs/moments-promo.md)。
 
 ## 安装与使用（最终用户）
 
