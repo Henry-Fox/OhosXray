@@ -16,6 +16,8 @@ const SOCKS_LISTEN = '127.0.0.1';
 const SOCKS_PORT = 10808;
 const HTTP_LISTEN = '127.0.0.1';
 const HTTP_PORT = 10809;
+/** 与 EntryAbility / VpnExtension 心跳一致（主进程 150s 判定超时） */
+const VPN_HEARTBEAT_STALE_MS = 150000;
 
 type RunMode = 'vpn' | 'local';
 
@@ -61,7 +63,25 @@ struct Index {
     }
     if (this.runMode === 'local') {
       this.connected = xrayBridge.isRunning();
+    } else {
+      this.connected = await this.resolveVpnConnectedUi();
     }
+  }
+
+  /**
+   * VPN 连接态以 Preferences + 扩展心跳为准，避免 UI 钉死「已连接」。
+   */
+  private async resolveVpnConnectedUi(): Promise<boolean> {
+    const want = await serverStore.getVpnConnected();
+    if (!want) {
+      return false;
+    }
+    const hb = await serverStore.getVpnHeartbeatMs();
+    if (hb <= 0) {
+      // 刚请求启动、首心跳尚未到达
+      return true;
+    }
+    return (Date.now() - hb) < VPN_HEARTBEAT_STALE_MS;
   }
 
   private async onToggleConnect(): Promise<void> {

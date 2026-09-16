@@ -1,5 +1,6 @@
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
+import fs from '@ohos.file.fs';
 import { ServerProfile } from '../model/ServerProfile';
 import { Logger } from './Logger';
 
@@ -10,12 +11,19 @@ const KEY_ACTIVE_ID = 'active_id';
 const KEY_PENDING_PROFILE = 'pending_profile';
 const KEY_PENDING_SMART_ROUTE = 'pending_smart_route';
 const KEY_VPN_CONNECTED = 'vpn_connected';
+/**
+ * 心跳文件（共享沙箱 filesDir）：Preferences 是每进程独立缓存，
+ * 主进程看不到 :vpn 进程 flush 的写入，只能走文件。内容 `${ms}|${physIp}`。
+ */
+const VPN_HB_FILE = 'vpn_hb.txt';
 
 export class ServerStore {
   private store: preferences.Preferences | null = null;
+  private hbPath: string = '';
 
   async init(context: common.UIAbilityContext | common.Context): Promise<void> {
     this.store = await preferences.getPreferences(context, STORE_NAME);
+    this.hbPath = `${context.filesDir}/${VPN_HB_FILE}`;
   }
 
   private ensureStore(): preferences.Preferences {
@@ -103,6 +111,9 @@ export class ServerStore {
   async setVpnConnected(connected: boolean): Promise<void> {
     const store = this.ensureStore();
     await store.put(KEY_VPN_CONNECTED, connected ? '1' : '0');
+    if (!connected) {
+      this.clearHeartbeatFile();
+    }
     await store.flush();
   }
 
@@ -110,6 +121,70 @@ export class ServerStore {
     const store = this.ensureStore();
     const raw = await store.get(KEY_VPN_CONNECTED, '0') as string;
     return raw === '1';
+  }
+
+  /**
+   * VpnExtension 心跳：主进程用它判断隧道进程是否冻死。
+   * 走共享沙箱文件而非 Preferences（跨进程缓存不可见）。
+   */
+  async touchVpnHeartbeat(physIp: string = ''): Promise<void> {
+    if (!this.hbPath) {
+      Logger.error(TAG, 'touchVpnHeartbeat: hbPath not initialized');
+      return;
+    }
+    try {
+      const file = fs.openSync(this.hbPath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE | fs.OpenMode.TRUNC);
+      fs.writeSync(file.fd, `${Date.now()}|${physIp}`);
+      fs.closeSync(file);
+    } catch (e) {
+      Logger.error(TAG, `touchVpnHeartbeat: ${Logger.stringifyError(e as Error)}`);
+    }
+  }
+
+  async getVpnHeartbeatMs(): Promise<number> {
+    const raw = this.readHeartbeatFile();
+    if (!raw) {
+      return 0;
+    }
+    const n = Number(raw.split('|')[0]);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  async getVpnPhysIp(): Promise<string> {
+    const raw = this.readHeartbeatFile();
+    if (!raw) {
+      return '';
+    }
+    const idx = raw.indexOf('|');
+    return idx >= 0 ? raw.substring(idx + 1) : '';
+  }
+
+  private readHeartbeatFile(): string {
+    if (!this.hbPath) {
+      return '';
+    }
+    try {
+      if (!fs.accessSync(this.hbPath)) {
+        return '';
+      }
+      return fs.readTextSync(this.hbPath).trim();
+    } catch (_e) {
+      // 跨进程瞬时读到半截时按无心跳处理，调用方兜底
+      return '';
+    }
+  }
+
+  private clearHeartbeatFile(): void {
+    if (!this.hbPath) {
+      return;
+    }
+    try {
+      if (fs.accessSync(this.hbPath)) {
+        fs.unlinkSync(this.hbPath);
+      }
+    } catch (_e) {
+      // ignore
+    }
   }
 }
 

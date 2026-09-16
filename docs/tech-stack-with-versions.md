@@ -49,19 +49,24 @@
 
 ## 日志滚动
 
-- pp.log：超过 512KB 截断重写
+- app.log：超过 512KB 截断重写
 - xray-error.log：超过 1MB 截断；启动时清理旧 xray-access.log
 - TUN 模式 Xray loglevel=warning，不再写 access 流量日志（避免冲掉诊断）
 
 ## 切网自动重连
 
-- 根因：`sendThrough` 绑死启动时物理 IPv4；切网后出现 `bind: cannot assign requested address`
-- 策略（v2）：
-  1. 每 2.5s 轮询物理 IP（VPN 下 NetConnection 可能不回调）
-  2. 同时订阅默认 `createNetConnection()` 事件
-  3. IP 变化时 **软重启 Xray**（保留 TUN fd；AndroidTun.Close 不关 fd）并换新 `sendThrough`
-  4. 软重启失败再全量 destroy/create VPN
-- **必须用含本逻辑的新 HAP 验证**；旧包日志不会出现 `net-reconnect=v2` / `netPoll` / `softRestart`
+- 根因（两层）：
+  1. **数据面**：鸿蒙无 Android `setUnderlyingNetworks`；切 WiFi 后旧 `VpnConnection`/TUN 失效，仅换 Xray `sendThrough`（软重启）不够
+  2. **控制面**：扩展进程可能被系统杀掉（`onProcessDied`）；UI 曾钉死「已连接」
+- 策略（**v3.3-hbfile+debounce-cap**，日志 `net-reconnect=v3.3-hbfile+debounce-cap` / `full-` / `healVpnIfStale`）：
+  1. 每 2.5s 轮询物理 IP + iface；订阅 `netAvailable` / `netLost` / `netConnectionPropertiesChange`
+  2. 链路变化防抖 **4.5s**；**已有定时器不重置**（v3.1 回归：轮询 2.5s 反复 reset 导致永远不重建）；事件 reset **封顶 8s**（v3.3：蜂窝高频 propertiesChange 可无限续命定时器，饿死重建）
+  3. 全量重建成功后 **12s 冷却**；IP/iface 变化或不健康 → destroy + create
+  4. 心跳走**共享沙箱文件** `filesDir/vpn_hb.txt`（内容 `${ms}|${physIp}`）：Preferences 是每进程独立缓存，主进程看不到 :vpn 进程 flush 的写入，v3.2 因此把健康扩展误判 stale（age 永增）反复 stop+start，移动网络下事件吵、症状最重
+  5. 扩展每 **30s** 写心跳；主进程 >**150s** 判死，且 stop+start 前**二次重读文件确认**（heal 同步占坑 + 15s 冷却防连打）
+  6. Xray error 泵只读增量；UI 以心跳新鲜度显示连接态
+- 实机验证（Mate 80 Pro，2026-09-16）：WiFi↔蜂窝双向切换 ~10s 内 `full recreate ... OK`，全程无 `restarting extension`
+- **必须用含本逻辑的新 HAP 验证**；旧包关键字不同
 
 ## 产品定位与验证机
 
