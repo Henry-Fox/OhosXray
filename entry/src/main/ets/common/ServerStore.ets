@@ -2,6 +2,7 @@ import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
 import fs from '@ohos.file.fs';
 import { ServerProfile } from '../model/ServerProfile';
+import { mergeImportedServers, BatchImportSummary } from '../model/ServerBatchMerge';
 import { Logger } from './Logger';
 
 const TAG = 'ServerStore';
@@ -59,6 +60,18 @@ export class ServerStore {
       servers.push(profile);
     }
     await this.saveServers(servers);
+  }
+
+  /**
+   * 批量导入：读取一次、合并、写入一次，界面不会看到导入一半的列表。
+   * @param profiles 选中的导入节点
+   * @returns 新增 / 更新 / 跳过数量
+   */
+  async upsertServers(profiles: ServerProfile[]): Promise<BatchImportSummary> {
+    const merged = mergeImportedServers(await this.listServers(), profiles);
+    await this.saveServers(merged.servers);
+    const summary: BatchImportSummary = { added: merged.added, updated: merged.updated, skipped: merged.skipped };
+    return summary;
   }
 
   async removeServer(id: string): Promise<void> {

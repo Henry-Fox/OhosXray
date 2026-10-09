@@ -11,6 +11,8 @@ import {
   SUBSCRIPTION_READ_TIMEOUT_MS,
   SUBSCRIPTION_MAX_REDIRECTS
 } from '../main/ets/model/ImportInput';
+import { mergeImportedServers, BatchMergeResult } from '../main/ets/model/ServerBatchMerge';
+import { ServerProfile, createEmptyProfile } from '../main/ets/model/ServerProfile';
 
 const SECRET_TOKEN = 'tok3n-secret-value';
 const FAKE_UUID = '00000000-0000-4000-8000-000000000000';
@@ -96,4 +98,133 @@ export default function localUnitTest() {
       expect(SUBSCRIPTION_MAX_REDIRECTS).assertEqual(3);
     });
   });
+
+  describe('serverBatchMerge', () => {
+    it('insertsNewNodeWithFreshId', 0, () => {
+      const result = merge([], [node('', UUID_A, 'a.example.com', 443, 'a')]);
+      expect(result.added).assertEqual(1);
+      expect(result.servers[0].id).assertEqual('new-1');
+      expect(result.servers[0].createdAt).assertEqual(NOW);
+    });
+
+    it('updatesExactEndpointInPlace', 0, () => {
+      const existing = [node('x1', UUID_A, 'a.example.com', 443, 'old')];
+      const incoming = node('', UUID_A, 'A.example.com', 443, 'new');
+      incoming.network = 'ws';
+      const result = merge(existing, [incoming]);
+      expect(result.updated).assertEqual(1);
+      expect(result.added).assertEqual(0);
+      expect(result.servers.length).assertEqual(1);
+      expect(result.servers[0].id).assertEqual('x1');
+      expect(result.servers[0].createdAt).assertEqual(1);
+      expect(result.servers[0].remark).assertEqual('new');
+      expect(result.servers[0].network).assertEqual('ws');
+    });
+
+    it('updatesMovedEndpointBySameRemark', 0, () => {
+      const existing = [node('x1', UUID_A, 'old.example.com', 443, 'node-a')];
+      const result = merge(existing, [node('', UUID_A, 'new.example.com', 8443, 'node-a')]);
+      expect(result.updated).assertEqual(1);
+      expect(result.servers.length).assertEqual(1);
+      expect(result.servers[0].id).assertEqual('x1');
+      expect(result.servers[0].address).assertEqual('new.example.com');
+      expect(result.servers[0].port).assertEqual(8443);
+    });
+
+    it('addsWhenRemarkFallbackIsAmbiguous', 0, () => {
+      const existing = [
+        node('x1', UUID_A, 'a.example.com', 443, 'same'),
+        node('x2', UUID_A, 'b.example.com', 443, 'same')
+      ];
+      const result = merge(existing, [node('', UUID_A, 'c.example.com', 443, 'same')]);
+      expect(result.added).assertEqual(1);
+      expect(result.updated).assertEqual(0);
+      expect(result.servers.length).assertEqual(3);
+    });
+
+    it('keepsSameRemarkWithDifferentUuidSeparate', 0, () => {
+      const existing = [node('x1', UUID_A, 'a.example.com', 443, 'same')];
+      const result = merge(existing, [node('', UUID_B, 'b.example.com', 443, 'same')]);
+      expect(result.added).assertEqual(1);
+      expect(result.servers[0].address).assertEqual('a.example.com');
+    });
+
+    it('updatesEachExistingRecordOnce', 0, () => {
+      const existing = [node('x1', UUID_A, 'a.example.com', 443, 'a')];
+      const result = merge(existing, [
+        node('', UUID_A, 'a.example.com', 443, 'first'),
+        node('', UUID_A, 'a.example.com', 443, 'second')
+      ]);
+      expect(result.updated).assertEqual(1);
+      expect(result.skipped).assertEqual(1);
+      expect(result.servers[0].remark).assertEqual('first');
+    });
+
+    it('prefersEndpointMatchOverRemarkFallback', 0, () => {
+      const existing = [node('x1', UUID_A, 'a.example.com', 443, 'same')];
+      const result = merge(existing, [
+        node('', UUID_A, 'a.example.com', 8443, 'same'),
+        node('', UUID_A, 'a.example.com', 443, 'same')
+      ]);
+      expect(result.updated).assertEqual(1);
+      expect(result.added).assertEqual(1);
+      expect(result.servers[0].id).assertEqual('x1');
+      expect(result.servers[0].port).assertEqual(443);
+      expect(result.servers[1].port).assertEqual(8443);
+    });
+
+    it('keepsUntouchedRecordsAndOrder', 0, () => {
+      const existing = [
+        node('x1', UUID_A, 'a.example.com', 443, 'a'),
+        node('x2', UUID_B, 'b.example.com', 443, 'b'),
+        node('x3', UUID_A, 'c.example.com', 443, 'c')
+      ];
+      const result = merge(existing, [
+        node('', UUID_B, 'b.example.com', 443, 'b2'),
+        node('', UUID_B, 'd.example.com', 443, 'd')
+      ]);
+      expect(result.servers.map((s: ServerProfile) => s.id).join(',')).assertEqual('x1,x2,x3,new-1');
+      expect(result.servers[1].remark).assertEqual('b2');
+      expect(result.servers[2].remark).assertEqual('c');
+      expect(existing[1].remark).assertEqual('b');
+    });
+  });
+}
+
+const NOW = 1700000000000;
+const UUID_A = '00000000-0000-4000-8000-00000000000a';
+const UUID_B = '00000000-0000-4000-8000-00000000000b';
+
+/**
+ * 构造测试节点。
+ * @param id 本地 id
+ * @param uuid 用户 UUID
+ * @param address 地址
+ * @param port 端口
+ * @param remark 备注名
+ * @returns 节点
+ */
+function node(id: string, uuid: string, address: string, port: number, remark: string): ServerProfile {
+  const profile = createEmptyProfile();
+  profile.id = id;
+  profile.createdAt = 1;
+  profile.uuid = uuid;
+  profile.address = address;
+  profile.port = port;
+  profile.remark = remark;
+  return profile;
+}
+
+/**
+ * 以可预测的 id 生成器执行合并。
+ * @param existing 已有节点
+ * @param imported 导入节点
+ * @returns 合并结果
+ */
+function merge(existing: ServerProfile[], imported: ServerProfile[]): BatchMergeResult {
+  let seq = 0;
+  return mergeImportedServers(existing, imported, (): string => {
+    seq++;
+    return `new-${seq}`;
+  }, NOW);
 }

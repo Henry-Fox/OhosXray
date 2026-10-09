@@ -161,7 +161,7 @@ Expected: FAIL because merge exports do not exist.
 
 - [ ] **Step 3: Implement the pure merge helper**
 
-Match in order: endpoint key; then protocol + UUID + trimmed remark when exactly one existing record has that key. Track matched existing ids so each record is updated at most once. On match, copy imported connection fields and keep the existing `id`/`createdAt`; on no match, append with `util.generateRandomUUID()` and `Date.now()`. Never match on remark alone.
+Match in two passes so input order cannot steal a record: first every import by endpoint key; then, for still-unmatched imports, protocol + UUID + trimmed remark only when exactly one existing record and exactly one unmatched import share that key and the record is not already matched. Track matched existing ids so each record is updated at most once. On match, copy imported connection fields and keep the existing `id`/`createdAt`; on no match, append with `util.generateRandomUUID()` and `Date.now()`. Never match on remark alone.
 
 - [ ] **Step 4: Add one-write store integration**
 

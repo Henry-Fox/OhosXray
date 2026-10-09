@@ -75,7 +75,7 @@ Extend `ServerStore` with a batch upsert operation that loads the server list on
 VMess/VLESS share links carry no stable server-side identity, so matching against existing local records follows this order:
 
 1. Endpoint identity: protocol + UUID + lower-cased address + port.
-2. Otherwise, protocol + UUID + trimmed remark, only when exactly one existing record has that key. This covers a node whose address or port changed on the server.
+2. Otherwise, protocol + UUID + trimmed remark, only when exactly one existing record and exactly one still-unmatched imported profile have that key. This covers a node whose address or port changed on the server. Endpoint matching runs for the whole batch first, so the order of entries cannot let a fallback match take a record that another entry matches exactly.
 
 Each existing record can be matched by at most one imported profile per batch; a second import resolving to an already-matched record is counted as skipped. When a match is found, the existing local `id` and `createdAt` are retained and the imported connection fields replace the old values. A display-name collision alone never causes an overwrite. Nodes without a match receive new local IDs.
 
