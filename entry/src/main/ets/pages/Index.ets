@@ -18,6 +18,23 @@ const HTTP_LISTEN = '127.0.0.1';
 const HTTP_PORT = 10809;
 /** 与 EntryAbility / VpnExtension 心跳一致（主进程 150s 判定超时） */
 const VPN_HEARTBEAT_STALE_MS = 150000;
+const VPN_START_WATCH_TICKS = 10;
+const VPN_START_WATCH_INTERVAL_MS = 1000;
+
+/**
+ * @param reason 扩展记录的失败类别
+ * @returns 面向用户的失败提示
+ */
+function vpnStartFailureTip(reason: string): string {
+  switch (reason) {
+    case 'xray':
+      return 'VPN 启动失败：Xray 无法加载该节点配置（如 REALITY 缺少公钥 pbk），请检查节点';
+    case 'no-profile':
+      return 'VPN 启动失败：未找到节点配置，请重新选择节点';
+    default:
+      return 'VPN 启动失败：无法创建 VPN 隧道，请重试';
+  }
+}
 
 type RunMode = 'vpn' | 'local';
 
@@ -76,6 +93,10 @@ struct Index {
     if (!want) {
       return false;
     }
+    if (serverStore.getVpnStartFailure()) {
+      await serverStore.setVpnConnected(false);
+      return false;
+    }
     const hb = await serverStore.getVpnHeartbeatMs();
     if (hb <= 0) {
       // 刚请求启动、首心跳尚未到达
@@ -112,9 +133,39 @@ struct Index {
       this.connected = true;
       const tip = this.smartRoute ? '智能分流已启动（国内直连）' : '全局代理已启动';
       promptAction.showToast({ message: tip, duration: 2500 });
+      this.watchVpnStartFailure(context).catch((e: Error) => {
+        Logger.warn(TAG, `watchVpnStartFailure: ${e.message}`);
+      });
     } catch (e) {
       Logger.error(TAG, `startVpn failed: ${Logger.stringifyError(e as Error)}`);
       promptAction.showToast({ message: `VPN 启动失败: ${Logger.stringifyError(e as Error)}`, duration: 3000 });
+    }
+  }
+
+  /**
+   * 扩展首次建隧道是异步的：启动后短时间内轮询失败标记，失败则停掉扩展并回滚为未连接。
+   * @param context UIAbilityContext
+   */
+  private async watchVpnStartFailure(context: common.UIAbilityContext): Promise<void> {
+    for (let i = 0; i < VPN_START_WATCH_TICKS; i++) {
+      await new Promise<void>((resolve: () => void) => setTimeout(resolve, VPN_START_WATCH_INTERVAL_MS));
+      if (!this.connected || this.runMode !== 'vpn') {
+        return;
+      }
+      const reason = serverStore.getVpnStartFailure();
+      if (!reason) {
+        continue;
+      }
+      Logger.warn(TAG, `vpn start failed in extension: reason=${reason}`);
+      try {
+        await vpnController.stop(context);
+      } catch (e) {
+        Logger.warn(TAG, `stop after start failure: ${Logger.stringifyError(e as Error)}`);
+        await serverStore.setVpnConnected(false);
+      }
+      this.connected = false;
+      promptAction.showToast({ message: vpnStartFailureTip(reason), duration: 4000 });
+      return;
     }
   }
 

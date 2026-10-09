@@ -17,6 +17,7 @@ export class VpnController {
     // Preferences 为跨进程主通道：部分机型 Want.parameters 里的 profileJson 到不了 Extension
     await serverStore.init(context);
     await serverStore.setPendingProfile(profile, smartRoute);
+    serverStore.clearVpnStartFailure();
     // 乐观标记：扩展成功后再刷新心跳；失败由 UI/扩展回滚
     await serverStore.setVpnConnected(true);
     await serverStore.touchVpnHeartbeat('');

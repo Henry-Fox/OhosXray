@@ -17,14 +17,63 @@ const KEY_VPN_CONNECTED = 'vpn_connected';
  * 主进程看不到 :vpn 进程 flush 的写入，只能走文件。内容 `${ms}|${physIp}`。
  */
 const VPN_HB_FILE = 'vpn_hb.txt';
+/** 扩展首次建隧道失败的原因（同样走共享文件），内容为失败类别 */
+const VPN_FAIL_FILE = 'vpn_fail.txt';
 
 export class ServerStore {
   private store: preferences.Preferences | null = null;
   private hbPath: string = '';
+  private failPath: string = '';
 
   async init(context: common.UIAbilityContext | common.Context): Promise<void> {
     this.store = await preferences.getPreferences(context, STORE_NAME);
     this.hbPath = `${context.filesDir}/${VPN_HB_FILE}`;
+    this.failPath = `${context.filesDir}/${VPN_FAIL_FILE}`;
+  }
+
+  /**
+   * 扩展进程记录首次启动失败，并清掉心跳，主进程据此回滚 UI 且停止自愈重试。
+   * @param reason 失败类别：xray / tun / no-profile
+   */
+  markVpnStartFailed(reason: string): void {
+    if (!this.failPath) {
+      return;
+    }
+    try {
+      const file = fs.openSync(this.failPath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE | fs.OpenMode.TRUNC);
+      fs.writeSync(file.fd, reason);
+      fs.closeSync(file);
+    } catch (e) {
+      Logger.error(TAG, `markVpnStartFailed: ${Logger.stringifyError(e as Error)}`);
+    }
+    this.clearHeartbeatFile();
+  }
+
+  /**
+   * @returns 最近一次启动失败的类别；没有失败记录时为空串
+   */
+  getVpnStartFailure(): string {
+    if (!this.failPath) {
+      return '';
+    }
+    try {
+      return fs.accessSync(this.failPath) ? fs.readTextSync(this.failPath).trim() : '';
+    } catch (_e) {
+      return '';
+    }
+  }
+
+  clearVpnStartFailure(): void {
+    if (!this.failPath) {
+      return;
+    }
+    try {
+      if (fs.accessSync(this.failPath)) {
+        fs.unlinkSync(this.failPath);
+      }
+    } catch (_e) {
+      // ignore
+    }
   }
 
   private ensureStore(): preferences.Preferences {

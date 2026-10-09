@@ -162,6 +162,11 @@ export default class EntryAbility extends UIAbility {
       if (!want) {
         return;
       }
+      if (serverStore.getVpnStartFailure()) {
+        Logger.warn(TAG, `healVpnIfStale(${trigger}): last start failed, skip restart`);
+        await serverStore.setVpnConnected(false);
+        return;
+      }
       const hb = await serverStore.getVpnHeartbeatMs();
       if (hb <= 0) {
         return;

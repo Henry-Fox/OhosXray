@@ -88,6 +88,8 @@ export default class ProxyVpnAbility extends VpnExtensionAbility {
   private pollTimer: number = -1;
   private pollTicks: number = 0;
   private lastFullRecreateAt: number = 0;
+  /** 最近一次 startTunSession 失败的类别：tun / xray */
+  private startFailReason: string = '';
   private netWatcher: connection.NetConnection | undefined;
 
   private logPumpTimer: number = -1;
@@ -127,6 +129,7 @@ export default class ProxyVpnAbility extends VpnExtensionAbility {
     }
     if (!this.profile) {
       Logger.error(TAG, 'onCreate: no profile from want / Preferences / id');
+      serverStore.markVpnStartFailed('no-profile');
       return;
     }
 
@@ -155,6 +158,7 @@ export default class ProxyVpnAbility extends VpnExtensionAbility {
       this.startNetPoll();
     } else {
       this.wantSession = false;
+      serverStore.markVpnStartFailed(this.startFailReason || 'tun');
       await serverStore.setVpnConnected(false);
     }
   }
@@ -187,6 +191,7 @@ export default class ProxyVpnAbility extends VpnExtensionAbility {
       return false;
     }
     const profile = this.profile;
+    this.startFailReason = 'tun';
 
     const link = await this.resolvePhysicalLink();
     const sendThrough = link.ip;
@@ -232,6 +237,7 @@ export default class ProxyVpnAbility extends VpnExtensionAbility {
     }
 
     if (!this.startXrayWith(tunFd, sendThrough, reason)) {
+      this.startFailReason = 'xray';
       xrayBridge.stop();
       await this.destroyConnection();
       this.sessionActive = false;
