@@ -86,7 +86,7 @@ The first version does not persist the subscription URL and does not implement s
 - A subscription is fetched only through a direct user action.
 - Only HTTP and HTTPS URLs are accepted, and URLs with embedded credentials (`user:pass@`) are rejected.
 - Redirects: `@ohos.net.http` follows redirects automatically and exposes neither the final URL nor a way to disable redirects. On API 23+ the request sets `maxRedirects: 3`; on older systems the platform default applies. Validating the final URL is a known limitation of this version and is not attempted. Moving to RCP (`@kit.RemoteCommunicationKit`) would lift it but adds a new dependency.
-- Requests use a 12 s connect timeout, a 30 s read timeout, and a 2 MiB response limit (`maxLimit`, plus a `Content-Length` pre-check when the header is present).
+- Requests use a 12 s connect timeout, a 30 s read timeout, and a 2 MiB response limit (`maxLimit`, plus a body-length check after download).
 - Full subscription URLs, query strings, credentials, response bodies, UUIDs, and share links are never written to normal logs or displayed in raw error messages.
 - User-facing errors name the failure category, such as timeout, HTTP status, oversized response, invalid encoding, or no supported nodes.
 

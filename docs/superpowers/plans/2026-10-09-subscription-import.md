@@ -127,7 +127,7 @@ Use `url.URL` from `@kit.ArkTS` for validation. Errors carry only a category cod
 
 - [ ] **Step 4: Implement `SubscriptionService.fetch`**
 
-Validate the URL, then `http.createHttp().request` with `GET`, `expectDataType: ARRAY_BUFFER`, `usingCache: false`, the timeout constants, and `maxLimit: SUBSCRIPTION_MAX_BYTES`. Set `maxRedirects: SUBSCRIPTION_MAX_REDIRECTS` only when `deviceInfo.sdkApiVersion >= 23`. Reject non-2xx status codes, a `Content-Length` header above the limit, and bodies at or above the limit. Decode UTF-8 with `util.TextDecoder`, call `parseSubscriptionPayload`, and map every failure to a category. Destroy the request in `finally`. Log only categories and response codes.
+Validate the URL, then `http.createHttp().request` with `GET`, `expectDataType: ARRAY_BUFFER`, `usingCache: false`, the timeout constants, and `maxLimit: SUBSCRIPTION_MAX_BYTES`. Set `maxRedirects: SUBSCRIPTION_MAX_REDIRECTS` only when `deviceInfo.sdkApiVersion >= 23`. Reject non-2xx status codes and bodies at or above the limit (`maxLimit` already caps the download, so no separate `Content-Length` pre-check). Decode UTF-8 with `util.TextDecoder`, call `parseSubscriptionPayload`, and map every failure to a category. Destroy the request in `finally`. Log only categories and response codes.
 
 - [ ] **Step 5: Run tests and an invalid-URL manual check**
 
