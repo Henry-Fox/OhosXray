@@ -12,6 +12,7 @@
 | runtimeOS | **HarmonyOS** | 使用 HMS Scan Kit 需要 HarmonyOS（非纯 OpenHarmony） |
 | 语言 | ArkTS | entry 模块 `.ets` |
 | 包名 | com.example.ohosxray | |
+| 订阅拉取 | `@kit.NetworkKit` `http`（`maxLimit` API 11+；`maxRedirects` API 23+，低版本走系统默认重定向） | 仅用户手动触发；不持久化订阅地址；文档 https://developer.huawei.com/consumer/cn/doc/harmonyos-references/js-apis-http |
 | 扫码 | `@kit.ScanKit`（`scanBarcode.startScanForResult`） | 系统默认扫码 UI + 相册；入口仅在「添加节点」；文档 https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/scan-scanbarcode |
 
 ## Native 桥接
