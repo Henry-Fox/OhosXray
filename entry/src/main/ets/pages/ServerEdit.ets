@@ -7,6 +7,9 @@ import { ServerProfile } from '../model/ServerProfile';
 import { parseShareLink } from '../model/LinkParser';
 import { serverStore } from '../common/ServerStore';
 import { ScanImportHelper } from '../common/ScanImportHelper';
+import { SubscriptionService } from '../common/SubscriptionService';
+import { SubscriptionImportSession } from '../common/SubscriptionImportSession';
+import { classifyImportInput, describeSubscriptionError } from '../model/ImportInput';
 import { Logger } from '../common/Logger';
 import { UiTheme } from '../common/UiTheme';
 import { UiIcon } from '../common/UiIcon';
@@ -24,6 +27,7 @@ struct ServerEdit {
   @State linkText: string = '';
   @State preview: ServerProfile | null = null;
   @State errorMsg: string = '';
+  @State loading: boolean = false;
   private editingId: string = '';
   private scanning: boolean = false;
 
@@ -52,7 +56,9 @@ struct ServerEdit {
       const text = data.getPrimaryText();
       if (text) {
         this.linkText = text;
-        this.onParse();
+        if (classifyImportInput(text) !== 'subscription') {
+          this.onParse();
+        }
       }
     } catch (e) {
       Logger.error(TAG, `paste failed: ${Logger.stringifyError(e as Error)}`);
@@ -61,10 +67,10 @@ struct ServerEdit {
   }
 
   /**
-   * 使用系统 Scan Kit 扫码（含相册），成功后直接入库并返回列表。
+   * 使用系统 Scan Kit 扫码（含相册）：节点链接直接入库并返回列表，订阅地址进入订阅预览。
    */
   private async onScanQr(): Promise<void> {
-    if (this.scanning) {
+    if (this.scanning || this.loading) {
       return;
     }
     if (!canIUse('SystemCapability.Multimedia.Scan.ScanBarcode')) {
@@ -83,6 +89,16 @@ struct ServerEdit {
       const data = await scanBarcode.startScanForResult(context, options);
       const raw = data?.originalValue ?? '';
       Logger.info(TAG, `ScanKit result len=${raw.length}`);
+      if (classifyImportInput(raw) === 'subscription') {
+        await this.startSubscriptionImport(raw);
+        if (this.errorMsg) {
+          try {
+            promptAction.showToast({ message: this.errorMsg, duration: 2500 });
+          } catch (_e) {
+          }
+        }
+        return;
+      }
       const result = await ScanImportHelper.saveFromLink(context, raw, this.editingId);
       if (!result.ok) {
         this.errorMsg = result.message ?? '扫码内容无法导入';
@@ -129,9 +145,45 @@ struct ServerEdit {
     }
   }
 
+  /**
+   * 拉取订阅并进入预览页；订阅地址只在内存中使用，不保存。
+   * @param raw 订阅地址原文
+   */
+  private async startSubscriptionImport(raw: string): Promise<void> {
+    if (this.editingId) {
+      this.errorMsg = '编辑节点仅支持单个节点链接';
+      return;
+    }
+    if (this.loading) {
+      return;
+    }
+    this.loading = true;
+    this.errorMsg = '';
+    this.preview = null;
+    try {
+      const result = await SubscriptionService.fetch(raw);
+      SubscriptionImportSession.set(result);
+      await router.pushUrl({ url: 'pages/SubscriptionImport' });
+    } catch (e) {
+      SubscriptionImportSession.clear();
+      this.errorMsg = describeSubscriptionError(e as Error);
+    } finally {
+      this.loading = false;
+    }
+  }
+
   private onParse(): void {
     this.errorMsg = '';
     this.preview = null;
+    const kind = classifyImportInput(this.linkText);
+    if (kind === 'subscription') {
+      this.startSubscriptionImport(this.linkText);
+      return;
+    }
+    if (kind === 'unsupported') {
+      this.errorMsg = '仅支持 vmess:// / vless:// 分享链接或 http(s) 订阅地址';
+      return;
+    }
     try {
       this.preview = parseShareLink(this.linkText);
     } catch (e) {
@@ -193,7 +245,7 @@ struct ServerEdit {
 
         Row() {
           Divider().layoutWeight(1).color(UiTheme.border)
-          Text('或粘贴分享链接').fontSize(12).fontWeight(FontWeight.Medium).fontColor(UiTheme.mutedFg)
+          Text('或粘贴分享链接 / 订阅地址').fontSize(12).fontWeight(FontWeight.Medium).fontColor(UiTheme.mutedFg)
             .margin({ left: 12, right: 12 })
           Divider().layoutWeight(1).color(UiTheme.border)
         }
@@ -203,13 +255,13 @@ struct ServerEdit {
           Column() {
             Row({ space: 6 }) {
               UiIcon({ src: $r('app.media.ic_link'), iconSize: 14, color: UiTheme.mutedFg })
-              Text('分享链接').fontSize(12).fontWeight(FontWeight.Medium).fontColor(UiTheme.mutedFg)
+              Text('分享链接 / 订阅地址').fontSize(12).fontWeight(FontWeight.Medium).fontColor(UiTheme.mutedFg)
             }
             .width('100%')
             .padding({ left: 16, right: 16, top: 10, bottom: 8 })
             .border({ width: { bottom: 1 }, color: UiTheme.border })
 
-            TextArea({ placeholder: '粘贴 vmess:// 或 vless:// 分享链接', text: this.linkText })
+            TextArea({ placeholder: '粘贴 vmess:// / vless:// 分享链接或 http(s) 订阅地址', text: this.linkText })
               .height(110).width('100%').fontSize(13).fontFamily('monospace')
               .fontColor(UiTheme.fg).backgroundColor(Color.Transparent)
               .padding({ left: 16, right: 16, top: 10, bottom: 12 })
@@ -237,12 +289,13 @@ struct ServerEdit {
             Button({ type: ButtonType.Normal }) {
               Row({ space: 6 }) {
                 UiIcon({ src: $r('app.media.ic_sparkles'), iconSize: 16, color: UiTheme.accentFg })
-                Text('解析').fontSize(13).fontWeight(FontWeight.Medium).fontColor(UiTheme.accentFg)
+                Text(this.loading ? '获取中…' : '解析')
+                  .fontSize(13).fontWeight(FontWeight.Medium).fontColor(UiTheme.accentFg)
               }
             }
             .layoutWeight(1).height(44).borderRadius(12).backgroundColor(UiTheme.accent)
-            .enabled(this.linkText.trim().length > 0)
-            .opacity(this.linkText.trim().length > 0 ? 1 : 0.4)
+            .enabled(this.linkText.trim().length > 0 && !this.loading)
+            .opacity(this.linkText.trim().length > 0 && !this.loading ? 1 : 0.4)
             .onClick(() => { this.onParse(); })
           }
           .width('100%')

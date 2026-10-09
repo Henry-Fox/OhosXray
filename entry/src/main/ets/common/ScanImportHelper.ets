@@ -35,9 +35,8 @@ export class ScanImportHelper {
     let profile: ServerProfile;
     try {
       profile = parseShareLink(text);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : '链接解析失败';
-      return { ok: false, message: `不是有效的节点二维码: ${msg}` };
+    } catch (_e) {
+      return { ok: false, message: '不是有效的节点二维码：仅支持 vmess:// / vless:// 分享链接或 http(s) 订阅地址' };
     }
 
     if (editingId) {
