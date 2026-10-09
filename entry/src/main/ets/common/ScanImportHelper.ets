@@ -2,7 +2,7 @@ import { util } from '@kit.ArkTS';
 import { common } from '@kit.AbilityKit';
 import { parseShareLink } from '../model/LinkParser';
 import { hasRealityKey } from '../model/SubscriptionParser';
-import { REALITY_KEY_MISSING_TIP } from '../model/ImportInput';
+import { REALITY_KEY_MISSING_TIP, classifyImportInput, unsupportedImportHint } from '../model/ImportInput';
 import { ServerProfile } from '../model/ServerProfile';
 import { serverStore } from './ServerStore';
 import { Logger } from './Logger';
@@ -30,6 +30,9 @@ export class ScanImportHelper {
     const text = (raw ?? '').trim();
     if (!text) {
       return { ok: false, message: '未识别到内容' };
+    }
+    if (classifyImportInput(text) === 'unsupported') {
+      return { ok: false, message: unsupportedImportHint(text) };
     }
 
     await serverStore.init(context);

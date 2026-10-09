@@ -63,6 +63,19 @@ export function classifyImportInput(raw: string): ImportInputKind {
 }
 
 /**
+ * 不支持格式的简短说明（不含链接内容）。
+ * @param raw 扫码或粘贴原文
+ * @returns 提示文案
+ */
+export function unsupportedImportHint(raw: string): string {
+  const lower = (raw ?? '').trim().toLowerCase();
+  if (lower.startsWith('trojan://') || lower.startsWith('ss://')) {
+    return '暂不支持 Trojan / SS 节点，请使用 VMess / VLESS 或 http(s) 订阅';
+  }
+  return '仅支持 vmess:// / vless:// 分享链接或 http(s) 订阅地址';
+}
+
+/**
  * 校验订阅地址：仅允许 http/https，主机非空，端口合法，不含账号密码和空白字符。
  * @param urlText 订阅地址
  * @returns 去除首尾空白后的地址
@@ -103,7 +116,7 @@ export function describeSubscriptionError(e: Error): string {
     case SUBSCRIPTION_ERROR_INVALID_URL:
       return '订阅地址无效：仅支持 http:// 或 https://，且不能包含账号密码';
     case SUBSCRIPTION_ERROR_TIMEOUT:
-      return '获取订阅超时，请检查网络后重试';
+      return '获取订阅超时：若 VPN 已连接仍失败，请先断开 VPN 或改用全局代理后再试';
     case SUBSCRIPTION_ERROR_HTTP_STATUS: {
       const status = e instanceof SubscriptionError ? e.status : 0;
       return `订阅服务器返回错误状态（HTTP ${status}）`;

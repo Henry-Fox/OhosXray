@@ -9,7 +9,12 @@ import { serverStore } from '../common/ServerStore';
 import { ScanImportHelper } from '../common/ScanImportHelper';
 import { SubscriptionService } from '../common/SubscriptionService';
 import { SubscriptionImportSession } from '../common/SubscriptionImportSession';
-import { classifyImportInput, describeSubscriptionError, REALITY_KEY_MISSING_TIP } from '../model/ImportInput';
+import {
+  classifyImportInput,
+  describeSubscriptionError,
+  REALITY_KEY_MISSING_TIP,
+  unsupportedImportHint
+} from '../model/ImportInput';
 import { hasRealityKey } from '../model/SubscriptionParser';
 import { Logger } from '../common/Logger';
 import { UiTheme } from '../common/UiTheme';
@@ -162,7 +167,10 @@ struct ServerEdit {
     this.errorMsg = '';
     this.preview = null;
     try {
-      const result = await SubscriptionService.fetch(raw);
+      const context = getContext(this) as common.UIAbilityContext;
+      await serverStore.init(context);
+      const vpnActive = await serverStore.getVpnConnected();
+      const result = await SubscriptionService.fetch(raw, vpnActive);
       SubscriptionImportSession.set(result);
       await router.pushUrl({ url: 'pages/SubscriptionImport' });
     } catch (e) {
@@ -182,7 +190,7 @@ struct ServerEdit {
       return;
     }
     if (kind === 'unsupported') {
-      this.errorMsg = '仅支持 vmess:// / vless:// 分享链接或 http(s) 订阅地址';
+      this.errorMsg = unsupportedImportHint(this.linkText);
       return;
     }
     try {

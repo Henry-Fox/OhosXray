@@ -49,17 +49,20 @@ export class SubscriptionService {
   /**
    * 拉取并解析订阅。
    * @param urlText 订阅地址（http/https）
+   * @param vpnActive 主界面认为 VPN 已连接时为 true，缩短超时避免长时间卡在「获取中」
    * @returns 解析结果
    * @throws Error 类别见 SUBSCRIPTION_ERROR_*，可用 describeSubscriptionError 转为提示文案
    */
-  static async fetch(urlText: string): Promise<SubscriptionParseResult> {
+  static async fetch(urlText: string, vpnActive: boolean = false): Promise<SubscriptionParseResult> {
     const target = validateSubscriptionUrl(urlText);
+    const connectTimeout = vpnActive ? 8000 : SUBSCRIPTION_CONNECT_TIMEOUT_MS;
+    const readTimeout = vpnActive ? 12000 : SUBSCRIPTION_READ_TIMEOUT_MS;
     const options: http.HttpRequestOptions = {
       method: http.RequestMethod.GET,
       expectDataType: http.HttpDataType.ARRAY_BUFFER,
       usingCache: false,
-      connectTimeout: SUBSCRIPTION_CONNECT_TIMEOUT_MS,
-      readTimeout: SUBSCRIPTION_READ_TIMEOUT_MS,
+      connectTimeout: connectTimeout,
+      readTimeout: readTimeout,
       maxLimit: SUBSCRIPTION_MAX_BYTES
     };
     if (deviceInfo.sdkApiVersion >= 23) {

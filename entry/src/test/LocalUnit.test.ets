@@ -1,6 +1,7 @@
 import { describe, it, expect } from '@ohos/hypium';
 import {
   classifyImportInput,
+  unsupportedImportHint,
   validateSubscriptionUrl,
   describeSubscriptionError,
   SubscriptionError,
@@ -52,6 +53,7 @@ export default function localUnitTest() {
       expect(classifyImportInput('')).assertEqual('unsupported');
       expect(classifyImportInput('trojan://p@h:443')).assertEqual('unsupported');
       expect(classifyImportInput('sub.example.com/s/abc')).assertEqual('unsupported');
+      expect(unsupportedImportHint('ss://abc@h:8388').indexOf('Trojan') >= 0).assertTrue();
     });
 
     it('acceptsHttpAndHttpsUrls', 0, () => {
