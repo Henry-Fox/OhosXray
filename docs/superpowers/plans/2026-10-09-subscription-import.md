@@ -12,10 +12,12 @@
 
 **Commands (run from `D:\Project\OhosXray`):**
 
-- Hvigor: `& "C:\Program Files\Huawei\DevEco Studio\tools\hvigor\bin\hvigorw.bat"` (referred to below as `hvigorw`).
+- Hvigor: `& "C:\Program Files\Huawei\DevEco Studio\tools\hvigor\bin\hvigorw.bat"` (referred to below as `hvigorw`). Set `$env:DEVECO_SDK_HOME="C:\Program Files\Huawei\DevEco Studio\sdk"` first.
 - Local unit tests: `hvigorw --mode module -p module=entry@default -p product=default test --no-daemon`.
+- Device test HAP: `hvigorw --mode module -p module=entry@ohosTest -p product=default -p buildMode=debug assembleHap --no-daemon`.
 - Debug HAP: `hvigorw --mode module -p module=entry@default -p product=default assembleHap --no-daemon`.
-- If a command name differs in the installed Hvigor version, record the working command in this file before continuing.
+
+**Test placement (verified in Task 0):** the local test runtime auto-mocks system APIs (`url.URL` throws `URLSearchParams is not defined`). Cases that need `@kit.ArkTS` `util`/`url` (share-link parsing, Base64, URL validation) live in `entry/src/ohosTest/ets/test/` and run on a device; system-API-free cases (input classification, merge with an injected id generator, session) stay in `entry/src/test/LocalUnit.test.ets`. Without an attached device, ohosTest cases are compiled but reported as not executed.
 
 ## Global Constraints
 
