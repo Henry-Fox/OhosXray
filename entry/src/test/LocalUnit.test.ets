@@ -13,6 +13,8 @@ import {
 } from '../main/ets/model/ImportInput';
 import { mergeImportedServers, BatchMergeResult } from '../main/ets/model/ServerBatchMerge';
 import { ServerProfile, createEmptyProfile } from '../main/ets/model/ServerProfile';
+import { SubscriptionParseResult } from '../main/ets/model/SubscriptionParser';
+import { SubscriptionImportSession } from '../main/ets/common/SubscriptionImportSession';
 
 const SECRET_TOKEN = 'tok3n-secret-value';
 const FAKE_UUID = '00000000-0000-4000-8000-000000000000';
@@ -189,6 +191,46 @@ export default function localUnitTest() {
       expect(existing[1].remark).assertEqual('b');
     });
   });
+
+  describe('subscriptionImportSession', () => {
+    it('takesOnceThenEmpty', 0, () => {
+      SubscriptionImportSession.set(sessionData());
+      const taken = SubscriptionImportSession.take();
+      expect(taken !== null).assertTrue();
+      expect((taken as SubscriptionParseResult).profiles.length).assertEqual(1);
+      expect((taken as SubscriptionParseResult).invalidCount).assertEqual(2);
+      expect(SubscriptionImportSession.take() === null).assertTrue();
+    });
+
+    it('clearRemovesPendingData', 0, () => {
+      SubscriptionImportSession.set(sessionData());
+      SubscriptionImportSession.clear();
+      expect(SubscriptionImportSession.take() === null).assertTrue();
+    });
+
+    it('storesCopyWithoutUrl', 0, () => {
+      const source = sessionData();
+      SubscriptionImportSession.set(source);
+      source.profiles[0].remark = 'mutated';
+      source.profiles.push(node('x9', UUID_B, 'z.example.com', 443, 'z'));
+      const taken = SubscriptionImportSession.take() as SubscriptionParseResult;
+      expect(taken.profiles.length).assertEqual(1);
+      expect(taken.profiles[0].remark).assertEqual('a');
+      expect(Object.keys(taken).sort().join(',')).assertEqual('duplicateCount,invalidCount,profiles');
+    });
+  });
+}
+
+/**
+ * @returns 会话测试用解析结果
+ */
+function sessionData(): SubscriptionParseResult {
+  const data: SubscriptionParseResult = {
+    profiles: [node('p1', UUID_A, 'a.example.com', 443, 'a')],
+    invalidCount: 2,
+    duplicateCount: 1
+  };
+  return data;
 }
 
 const NOW = 1700000000000;
