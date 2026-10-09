@@ -1,6 +1,8 @@
 import { util } from '@kit.ArkTS';
 import { common } from '@kit.AbilityKit';
 import { parseShareLink } from '../model/LinkParser';
+import { hasRealityKey } from '../model/SubscriptionParser';
+import { REALITY_KEY_MISSING_TIP } from '../model/ImportInput';
 import { ServerProfile } from '../model/ServerProfile';
 import { serverStore } from './ServerStore';
 import { Logger } from './Logger';
@@ -37,6 +39,9 @@ export class ScanImportHelper {
       profile = parseShareLink(text);
     } catch (_e) {
       return { ok: false, message: '不是有效的节点二维码：仅支持 vmess:// / vless:// 分享链接或 http(s) 订阅地址' };
+    }
+    if (!hasRealityKey(profile)) {
+      return { ok: false, message: REALITY_KEY_MISSING_TIP };
     }
 
     if (editingId) {

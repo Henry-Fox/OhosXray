@@ -9,7 +9,8 @@ import { serverStore } from '../common/ServerStore';
 import { ScanImportHelper } from '../common/ScanImportHelper';
 import { SubscriptionService } from '../common/SubscriptionService';
 import { SubscriptionImportSession } from '../common/SubscriptionImportSession';
-import { classifyImportInput, describeSubscriptionError } from '../model/ImportInput';
+import { classifyImportInput, describeSubscriptionError, REALITY_KEY_MISSING_TIP } from '../model/ImportInput';
+import { hasRealityKey } from '../model/SubscriptionParser';
 import { Logger } from '../common/Logger';
 import { UiTheme } from '../common/UiTheme';
 import { UiIcon } from '../common/UiIcon';
@@ -185,7 +186,12 @@ struct ServerEdit {
       return;
     }
     try {
-      this.preview = parseShareLink(this.linkText);
+      const profile = parseShareLink(this.linkText);
+      if (!hasRealityKey(profile)) {
+        this.errorMsg = REALITY_KEY_MISSING_TIP;
+        return;
+      }
+      this.preview = profile;
     } catch (e) {
       this.errorMsg = e instanceof Error ? e.message : '链接无效，请粘贴 vmess:// 或 vless:// 开头的分享链接';
     }

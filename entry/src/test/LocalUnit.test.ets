@@ -216,7 +216,9 @@ export default function localUnitTest() {
       const taken = SubscriptionImportSession.take() as SubscriptionParseResult;
       expect(taken.profiles.length).assertEqual(1);
       expect(taken.profiles[0].remark).assertEqual('a');
-      expect(Object.keys(taken).sort().join(',')).assertEqual('duplicateCount,invalidCount,profiles');
+      expect(taken.missingRealityKeyCount).assertEqual(1);
+      expect(Object.keys(taken).sort().join(','))
+        .assertEqual('duplicateCount,invalidCount,missingRealityKeyCount,profiles');
     });
   });
 }
@@ -228,7 +230,8 @@ function sessionData(): SubscriptionParseResult {
   const data: SubscriptionParseResult = {
     profiles: [node('p1', UUID_A, 'a.example.com', 443, 'a')],
     invalidCount: 2,
-    duplicateCount: 1
+    duplicateCount: 1,
+    missingRealityKeyCount: 1
   };
   return data;
 }

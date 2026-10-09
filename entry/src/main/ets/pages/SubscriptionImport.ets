@@ -3,6 +3,7 @@ import { common } from '@kit.AbilityKit';
 import { ServerProfile } from '../model/ServerProfile';
 import { serverStore } from '../common/ServerStore';
 import { SubscriptionImportSession } from '../common/SubscriptionImportSession';
+import { REALITY_KEY_MISSING_TIP } from '../model/ImportInput';
 import { Logger } from '../common/Logger';
 import { UiTheme } from '../common/UiTheme';
 import { UiIcon } from '../common/UiIcon';
@@ -30,6 +31,7 @@ struct SubscriptionImport {
   @State selected: boolean[] = [];
   @State invalidCount: number = 0;
   @State duplicateCount: number = 0;
+  @State missingRealityKeyCount: number = 0;
   @State saving: boolean = false;
 
   async aboutToAppear(): Promise<void> {
@@ -45,6 +47,7 @@ struct SubscriptionImport {
     this.selected = data.profiles.map((): boolean => true);
     this.invalidCount = data.invalidCount;
     this.duplicateCount = data.duplicateCount;
+    this.missingRealityKeyCount = data.missingRealityKeyCount;
   }
 
   /**
@@ -117,6 +120,10 @@ struct SubscriptionImport {
           if (this.invalidCount > 0 || this.duplicateCount > 0) {
             Text(`无效 ${this.invalidCount} 条 · 重复 ${this.duplicateCount} 条`)
               .fontSize(12).fontColor(UiTheme.mutedFg)
+          }
+          if (this.missingRealityKeyCount > 0) {
+            Text(`其中 ${this.missingRealityKeyCount} 条${REALITY_KEY_MISSING_TIP}`)
+              .fontSize(12).fontColor(UiTheme.warn)
           }
         }
         .alignItems(HorizontalAlign.Start).width('100%')

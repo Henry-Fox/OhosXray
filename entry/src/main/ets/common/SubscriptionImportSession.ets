@@ -9,7 +9,8 @@ function cloneResult(result: SubscriptionParseResult): SubscriptionParseResult {
   const copy: SubscriptionParseResult = {
     profiles: result.profiles.map((p: ServerProfile) => JSON.parse(JSON.stringify(p)) as ServerProfile),
     invalidCount: result.invalidCount,
-    duplicateCount: result.duplicateCount
+    duplicateCount: result.duplicateCount,
+    missingRealityKeyCount: result.missingRealityKeyCount
   };
   return copy;
 }

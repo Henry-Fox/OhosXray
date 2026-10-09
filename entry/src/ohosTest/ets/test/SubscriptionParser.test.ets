@@ -3,9 +3,12 @@ import { util } from '@kit.ArkTS';
 import {
   parseSubscriptionPayload,
   isUsableProfile,
+  hasRealityKey,
   SUBSCRIPTION_ERROR_EMPTY,
-  SUBSCRIPTION_ERROR_NO_NODES
+  SUBSCRIPTION_ERROR_NO_NODES,
+  SUBSCRIPTION_ERROR_REALITY_KEY
 } from '../../../main/ets/model/SubscriptionParser';
+import { parseShareLink } from '../../../main/ets/model/LinkParser';
 import { ProxyProtocol, createEmptyProfile } from '../../../main/ets/model/ServerProfile';
 
 const UUID_A = '00000000-0000-4000-8000-00000000000a';
@@ -102,6 +105,17 @@ export default function subscriptionParserTest() {
       const result = parseSubscriptionPayload(`${first}\n${second}`);
       expect(result.profiles.length).assertEqual(2);
       expect(result.duplicateCount).assertEqual(0);
+    });
+
+    it('rejectsRealityWithoutPublicKey', 0, () => {
+      const noPbk = `vless://${UUID_A}@r.example.com:4436?security=reality&sid=85b4&sni=dl.google.com&type=tcp#no-pbk`;
+      const result = parseSubscriptionPayload(`${noPbk}\n${LINK_B}`);
+      expect(result.profiles.length).assertEqual(1);
+      expect(result.profiles[0].remark).assertEqual('node-b');
+      expect(result.invalidCount).assertEqual(1);
+      expect(result.missingRealityKeyCount).assertEqual(1);
+      expect(hasRealityKey(parseShareLink(noPbk))).assertFalse();
+      expect(errorCategoryOf(noPbk)).assertEqual(SUBSCRIPTION_ERROR_REALITY_KEY);
     });
 
     it('rejectsEmptyPayload', 0, () => {

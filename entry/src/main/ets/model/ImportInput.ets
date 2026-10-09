@@ -1,4 +1,7 @@
-import { SUBSCRIPTION_ERROR_EMPTY, SUBSCRIPTION_ERROR_NO_NODES } from './SubscriptionParser';
+import { SUBSCRIPTION_ERROR_EMPTY, SUBSCRIPTION_ERROR_NO_NODES, SUBSCRIPTION_ERROR_REALITY_KEY } from './SubscriptionParser';
+
+/** 节点为 REALITY 但链接缺少公钥（pbk）时的提示 */
+export const REALITY_KEY_MISSING_TIP = '链接缺少 REALITY 公钥（pbk），无法连接，请检查面板配置';
 
 /** 订阅响应体上限（字节） */
 export const SUBSCRIPTION_MAX_BYTES = 2 * 1024 * 1024;
@@ -115,6 +118,8 @@ export function describeSubscriptionError(e: Error): string {
       return '订阅内容为空';
     case SUBSCRIPTION_ERROR_NO_NODES:
       return '订阅中没有可导入的 VMess / VLESS 节点';
+    case SUBSCRIPTION_ERROR_REALITY_KEY:
+      return `订阅中的节点均无法导入：${REALITY_KEY_MISSING_TIP}`;
     default:
       return '获取订阅失败，请检查网络后重试';
   }

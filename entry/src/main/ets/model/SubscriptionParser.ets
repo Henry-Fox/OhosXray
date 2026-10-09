@@ -6,6 +6,8 @@ import { ServerProfile } from './ServerProfile';
 export const SUBSCRIPTION_ERROR_EMPTY = 'empty';
 /** 订阅内容中没有可用的 VMess/VLESS 节点 */
 export const SUBSCRIPTION_ERROR_NO_NODES = 'no-supported-nodes';
+/** 订阅中只有缺少 REALITY 公钥（pbk）的节点 */
+export const SUBSCRIPTION_ERROR_REALITY_KEY = 'reality-missing-key';
 
 /**
  * 订阅解析结果。
@@ -17,6 +19,17 @@ export interface SubscriptionParseResult {
   invalidCount: number;
   /** 订阅内重复的条目数 */
   duplicateCount: number;
+  /** invalidCount 中因缺少 REALITY 公钥（pbk）而无法连接的条目数 */
+  missingRealityKeyCount: number;
+}
+
+/**
+ * REALITY 节点必须带公钥（pbk），否则 Xray 无法生成出站配置。
+ * @param profile 节点
+ * @returns 非 REALITY 节点，或 REALITY 公钥非空时为 true
+ */
+export function hasRealityKey(profile: ServerProfile): boolean {
+  return profile.tls !== 'reality' || (profile.realityPublicKey ?? '').trim().length > 0;
 }
 
 /**
@@ -105,7 +118,9 @@ export function parseSubscriptionPayload(payload: string): SubscriptionParseResu
     }
   }
 
-  const result: SubscriptionParseResult = { profiles: [], invalidCount: 0, duplicateCount: 0 };
+  const result: SubscriptionParseResult = {
+    profiles: [], invalidCount: 0, duplicateCount: 0, missingRealityKeyCount: 0
+  };
   const seenLinks = new Set<string>();
   const seenKeys = new Set<string>();
   for (const line of lines) {
@@ -126,6 +141,11 @@ export function parseSubscriptionPayload(payload: string): SubscriptionParseResu
       result.invalidCount++;
       continue;
     }
+    if (!hasRealityKey(profile)) {
+      result.invalidCount++;
+      result.missingRealityKeyCount++;
+      continue;
+    }
     const key = endpointKey(profile);
     if (seenKeys.has(key)) {
       result.duplicateCount++;
@@ -137,7 +157,7 @@ export function parseSubscriptionPayload(payload: string): SubscriptionParseResu
   }
 
   if (result.profiles.length === 0) {
-    throw new Error(SUBSCRIPTION_ERROR_NO_NODES);
+    throw new Error(result.missingRealityKeyCount > 0 ? SUBSCRIPTION_ERROR_REALITY_KEY : SUBSCRIPTION_ERROR_NO_NODES);
   }
   return result;
 }
