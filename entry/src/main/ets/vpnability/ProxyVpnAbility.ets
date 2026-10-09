@@ -19,6 +19,7 @@ const TAG = 'ProxyVpnAbility';
 interface NetAddr {
   address: string;
   family: number; // 1=IPv4, 2=IPv6
+  port?: number;
 }
 interface AddressWithPrefix {
   address: NetAddr;
@@ -33,13 +34,15 @@ interface RouteInfo {
   isExcludedRoute?: boolean;
 }
 interface VpnConfig {
+  vpnId?: string;
   addresses: AddressWithPrefix[];
   routes: RouteInfo[];
   mtu: number;
   dnsAddresses: string[];
   isIPv4Accepted: boolean;
-  trustedApplications: string[];
-  blockedApplications: string[];
+  /** 与 blockedApplications 互斥，勿同时设置（鸿蒙 7 上同时传空白名单会导致无 App 走 VPN） */
+  trustedApplications?: string[];
+  blockedApplications?: string[];
 }
 
 const TUN_IPV4 = '172.19.0.1';
@@ -47,10 +50,10 @@ const TUN_IPV4_PREFIX = 30;
 const MTU = 1500;
 
 const LOG_PUMP_INTERVAL_MS = 2000;
-/** 仅短窗泵 error（不再泵 access，避免撑爆 app.log） */
-const LOG_PUMP_TICKS = 30; // ~1 分钟
-/** Xray error 日志滚动上限 */
+/** Xray error/access 日志滚动上限 */
 const XRAY_LOG_MAX_SIZE = 1024 * 1024; // 1MB
+/** 单次泵入 app.log 的最大增量，避免偶发巨量刷屏 */
+const LOG_PUMP_CHUNK_MAX = 12000;
 
 /** 切网防抖：WiFi/蜂窝抖动时等链路稳定再重建 */
 const NET_RECONNECT_DEBOUNCE_MS = 4500;
@@ -72,6 +75,8 @@ interface PhysicalLink {
 
 export default class ProxyVpnAbility extends VpnExtensionAbility {
   private vpnConnection: vpnExtension.VpnConnection | undefined;
+  /** generateVpnId() 得到的会话 id，销毁时优先按 id 销毁（API 20+ / 鸿蒙 7） */
+  private vpnSessionId: string = '';
   private profile: ServerProfile | null = null;
   private smartRouteWanted: boolean = true;
   private assetPath: string = '';
@@ -79,6 +84,8 @@ export default class ProxyVpnAbility extends VpnExtensionAbility {
   private currentSendThrough: string = '';
   private currentIface: string = '';
   private currentTunFd: number = -1;
+  /** buildVpnConfig 解析出的节点 IPv4，供 Xray outbound 直拨，绕过 DoH 鸡生蛋 */
+  private nodeDialIp: string = '';
   private sessionActive: boolean = false;
   /** 用户意图：扩展存活期间应保持隧道（重建失败后仍继续轮询） */
   private wantSession: boolean = false;
@@ -94,6 +101,7 @@ export default class ProxyVpnAbility extends VpnExtensionAbility {
 
   private logPumpTimer: number = -1;
   private errChars: number = 0;
+  private accessChars: number = 0;
   private logRotateTimer: number = -1;
 
   async onCreate(want: Want): Promise<void> {
@@ -198,21 +206,38 @@ export default class ProxyVpnAbility extends VpnExtensionAbility {
     Logger.info(TAG,
       `startTunSession(${reason}): sendThrough=${sendThrough || '(none)'} iface=${link.iface || '(none)'}`);
 
-    const config = await this.buildVpnConfig(profile);
     let tunFd = -1;
     let conn: vpnExtension.VpnConnection;
     try {
       conn = vpnExtension.createVpnConnection(this.context as common.VpnExtensionContext);
       this.vpnConnection = conn;
-      // 文档建议：先保护进程，再建隧道，避免 Go 出站 socket 被抓回 TUN
+      // 文档建议：先保护进程，再建隧道，避免 Go 出站 socket 被抓回 TUN（API 22+）
       try {
         await conn.protectProcessNet();
         Logger.info(TAG, `startTunSession(${reason}): protectProcessNet(pre-create) ok`);
       } catch (e0) {
         Logger.warn(TAG, `protectProcessNet(pre-create): ${Logger.stringifyError(e0 as Error)}`);
       }
-      tunFd = await conn.create(config);
-      Logger.info(TAG, `startTunSession(${reason}): tunFd=${tunFd}`);
+      // 优先不带 vpnId（旧式单 VPN 对象）：NetworkVpnManager.GetVpnConfigToAnco 只认 vpnObj_，
+      // 带 vpnId 走多 VPN 通道时卓易通/出境易容器拿不到宿主 VPN，容器流量会绕过 TUN。
+      this.vpnSessionId = '';
+      try {
+        const legacyConfig = await this.buildVpnConfig(profile, '');
+        tunFd = await conn.create(legacyConfig);
+        Logger.info(TAG, `startTunSession(${reason}): legacy create ok (anco-compatible)`);
+      } catch (eLegacy) {
+        Logger.warn(TAG, `legacy create failed, fallback vpnId: ${Logger.stringifyError(eLegacy as Error)}`);
+        try {
+          this.vpnSessionId = await conn.generateVpnId();
+          Logger.info(TAG, `startTunSession(${reason}): vpnId len=${this.vpnSessionId.length}`);
+        } catch (eId) {
+          this.vpnSessionId = '';
+          Logger.warn(TAG, `generateVpnId: ${Logger.stringifyError(eId as Error)}`);
+        }
+        const config = await this.buildVpnConfig(profile, this.vpnSessionId);
+        tunFd = await conn.create(config);
+      }
+      Logger.info(TAG, `startTunSession(${reason}): tunFd=${tunFd} vpnId=${this.vpnSessionId.length > 0}`);
     } catch (e) {
       Logger.error(TAG, `startTunSession(${reason}): createVpn failed: ${Logger.stringifyError(e as Error)}`);
       await this.destroyConnection();
@@ -264,14 +289,18 @@ export default class ProxyVpnAbility extends VpnExtensionAbility {
     if (!this.profile) {
       return false;
     }
+    // 鸿蒙 7：已用 protectProcessNet 让扩展进程走物理网；再写 sendThrough 绑 wlan IP
+    // 时出站常建连失败（服务器上看不到 :4436 连接，手机却显示已连接）。不再传 sendThrough。
     const xrayConfig = buildXrayConfig(this.profile, {
       mode: 'tun',
       tunFd: tunFd,
       logDir: this.context.filesDir,
-      sendThrough: sendThrough,
+      sendThrough: '',
       smartRoute: this.useSmart,
+      proxyDialAddress: this.nodeDialIp,
     });
-    Logger.info(TAG, `startXray(${reason}): configLen=${xrayConfig.length} sendThrough=${sendThrough || '(none)'}`);
+    Logger.info(TAG,
+      `startXray(${reason}): configLen=${xrayConfig.length} physIp=${sendThrough || '(none)'} dialIp=${this.nodeDialIp || '(host)'} (no sendThrough)`);
     const ok = xrayBridge.start(xrayConfig, tunFd, this.assetPath);
     if (!ok) {
       Logger.error(TAG, `startXray(${reason}): xrayBridge.start failed`);
@@ -504,42 +533,59 @@ export default class ProxyVpnAbility extends VpnExtensionAbility {
   private async destroyConnection(): Promise<void> {
     if (this.vpnConnection) {
       try {
-        await this.vpnConnection.destroy();
+        if (this.vpnSessionId.length > 0) {
+          await this.vpnConnection.destroy(this.vpnSessionId);
+        } else {
+          await this.vpnConnection.destroy();
+        }
       } catch (e) {
         Logger.error(TAG, `destroyConnection: ${Logger.stringifyError(e as Error)}`);
       }
       this.vpnConnection = undefined;
+      this.vpnSessionId = '';
     }
   }
 
-  private async buildVpnConfig(profile: ServerProfile): Promise<VpnConfig> {
+  /**
+   * @param profile 当前节点（用于排除节点 IP）
+   * @param vpnId generateVpnId 结果；空串表示不写 vpnId 字段
+   */
+  private async buildVpnConfig(profile: ServerProfile, vpnId: string = ''): Promise<VpnConfig> {
+    // 鸿蒙 7 多 VPN：真实网卡名是 multitun-vpn1，不是旧的 vpn-tun。
+    // 文档：interface 留空时系统绑到当前 VPN 虚拟网卡；填错名会导致路由无效、流量不进 TUN。
+    const vpnIface = '';
     const routes: RouteInfo[] = [
       {
-        interface: 'vpn-tun',
-        destination: { address: { address: '0.0.0.0', family: 1 }, prefixLength: 0 },
-        gateway: { address: '0.0.0.0', family: 1 },
-        hasGateway: false,
+        interface: vpnIface,
+        destination: { address: { address: '0.0.0.0', family: 1, port: 0 }, prefixLength: 0 },
+        gateway: { address: '', family: 1, port: 0 },
+        hasGateway: true,
         isDefaultRoute: true,
       },
     ];
 
     const pushExclude = (ip: string, prefix: number): void => {
       routes.push({
-        interface: 'vpn-tun',
-        destination: { address: { address: ip, family: 1 }, prefixLength: prefix },
-        gateway: { address: '0.0.0.0', family: 1 },
+        interface: vpnIface,
+        destination: { address: { address: ip, family: 1, port: 0 }, prefixLength: prefix },
+        gateway: { address: '', family: 1, port: 0 },
         hasGateway: false,
         isDefaultRoute: false,
         isExcludedRoute: true,
       });
     };
 
-    // 节点 IP 排除：代理出站不进 TUN
-    if (this.isIPv4Literal(profile.address)) {
-      pushExclude(profile.address, 32);
+    // 节点 IP 必须排除：域名节点若只写 host、不排除解析出的 IP，
+    // Reality 出站会再被抓回 TUN（日志里会出现大量 to:节点IP:端口 + sniff 成 sni 域名）。
+    const nodeIps = await this.resolveNodeIpv4s(profile.address);
+    this.nodeDialIp = nodeIps.length > 0 ? nodeIps[0] : '';
+    for (let i = 0; i < nodeIps.length; i++) {
+      pushExclude(nodeIps[i], 32);
     }
 
-    // DoH / 常用 DNS 排除：避免 dns-out/freedom 回环
+    // 排除公共 DNS/DoH IP：浏览器会直连 1.1.1.1:443 / 8.8.8.8:443 做 DoH。
+    // 若不排除，这些连接涌进 gVisor 并走 freedom，会迅速耗尽 fd（too many open files），
+    // DoH 反而全部超时。Xray 自身 DoH 靠 protectProcessNet + 路由 direct 出物理网。
     const dnsIps: string[] = [
       '1.1.1.1', '1.0.0.1', '8.8.8.8', '8.8.4.4',
       '223.5.5.5', '223.6.6.6', '119.29.29.29', '114.114.114.114'
@@ -562,25 +608,32 @@ export default class ProxyVpnAbility extends VpnExtensionAbility {
       for (let i = 0; i < n; i++) {
         pushExclude(cnList[i].address, cnList[i].prefixLength);
       }
-      Logger.info(TAG, `buildVpnConfig: smart excludes dns=${dnsIps.length} cn=${n} totalRoutes=${routes.length}`);
+      Logger.info(TAG,
+        `buildVpnConfig: smart excludes node=${nodeIps.length} dns=${dnsIps.length} cn=${n} totalRoutes=${routes.length}`);
     } else {
-      Logger.info(TAG, `buildVpnConfig: global proxy, routes=${routes.length}`);
+      Logger.info(TAG,
+        `buildVpnConfig: global proxy, nodeExcludes=${nodeIps.length} dns=${dnsIps.length} routes=${routes.length}`);
     }
 
-    // 智能分流用国内 DNS，减少域名被解析到海外节点再绕代理
-    const dnsServers = this.useSmart ? ['223.5.5.5', '223.6.6.6'] : ['1.1.1.1', '8.8.8.8'];
+    // 智能分流：国内 DNS 兜底 + 公共 DNS；全局代理用公共 DNS
+    const dnsServers = this.useSmart ? ['223.5.5.5', '223.6.6.6', '1.1.1.1'] : ['1.1.1.1', '8.8.8.8'];
 
-    return {
+    // 注意：不要同时设置 trustedApplications / blockedApplications。
+    // 鸿蒙 7 上若传 trustedApplications:[]，可能被当成「白名单为空 → 无 App 走 VPN」。
+    // 本进程已用 protectProcessNet 绕过 TUN；主界面拉订阅若仍超时，先断开 VPN 再拉。
+    const config: VpnConfig = {
       addresses: [
         { address: { address: TUN_IPV4, family: 1 }, prefixLength: TUN_IPV4_PREFIX },
       ],
       routes: routes,
       mtu: MTU,
       dnsAddresses: dnsServers,
-      isIPv4Accepted: true,
-      trustedApplications: [],
-      blockedApplications: [],
+      isIPv4Accepted: true
     };
+    if (vpnId.length > 0) {
+      config.vpnId = vpnId;
+    }
+    return config;
   }
 
   private isIPv4Literal(host: string): boolean {
@@ -595,6 +648,36 @@ export default class ProxyVpnAbility extends VpnExtensionAbility {
       }
     }
     return true;
+  }
+
+  /**
+   * 解析节点地址为 IPv4，供 isExcludedRoute 使用（不把 UUID/完整 URL 写入日志）。
+   * @param host 节点 address 字段（域名或字面量 IP）
+   * @returns IPv4 列表
+   */
+  private async resolveNodeIpv4s(host: string): Promise<string[]> {
+    const name = (host ?? '').trim();
+    if (!name) {
+      return [];
+    }
+    if (this.isIPv4Literal(name)) {
+      return [name];
+    }
+    try {
+      const addrs = await connection.getAddressesByName(name);
+      const out: string[] = [];
+      for (let i = 0; i < addrs.length; i++) {
+        const ip = addrs[i]?.address ?? '';
+        if (this.isIPv4Literal(ip) && out.indexOf(ip) < 0) {
+          out.push(ip);
+        }
+      }
+      Logger.info(TAG, `resolveNodeIpv4s: hostLen=${name.length} ipv4=${out.length}`);
+      return out;
+    } catch (e) {
+      Logger.warn(TAG, `resolveNodeIpv4s failed: ${Logger.stringifyError(e as Error)}`);
+      return [];
+    }
   }
 
   /**
@@ -678,21 +761,23 @@ export default class ProxyVpnAbility extends VpnExtensionAbility {
 
   private startXrayLogPump(): void {
     this.stopXrayLogPump();
-    // 只泵新增内容，避免每次重建把整份历史 xray-error 打爆 hilog/内存
-    this.errChars = this.currentErrorLogSize();
-    let ticks = 0;
+    // 会话期间持续泵 error + access，便于 hdc 拉 app.log 排查 Reality/DNS
+    this.errChars = this.logFileSize('xray-error.log');
+    this.accessChars = this.logFileSize('xray-access.log');
     this.logPumpTimer = setInterval(() => {
-      ticks++;
-      this.pumpErrorLog();
-      if (ticks >= LOG_PUMP_TICKS) {
-        this.stopXrayLogPump();
-      }
+      this.pumpXrayLogFile('xray-error.log', 'err', true);
+      this.pumpXrayLogFile('xray-access.log', 'access', true);
     }, LOG_PUMP_INTERVAL_MS);
+    // 立刻泵一次启动阶段已写入的内容（否则 errChars 会跳过握手失败）
+    this.errChars = 0;
+    this.accessChars = 0;
+    this.pumpXrayLogFile('xray-error.log', 'err', true);
+    this.pumpXrayLogFile('xray-access.log', 'access', true);
   }
 
-  private currentErrorLogSize(): number {
+  private logFileSize(name: string): number {
     try {
-      const path = `${this.context.filesDir}/xray-error.log`;
+      const path = `${this.context.filesDir}/${name}`;
       if (!fs.accessSync(path)) {
         return 0;
       }
@@ -744,7 +829,9 @@ export default class ProxyVpnAbility extends VpnExtensionAbility {
         if (st.size > XRAY_LOG_MAX_SIZE) {
           const f = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE | fs.OpenMode.TRUNC);
           fs.closeSync(f);
-          if (!isAccess) {
+          if (isAccess) {
+            this.accessChars = 0;
+          } else {
             this.errChars = 0;
           }
           Logger.info(TAG, `rotated ${names[i]} oldSize=${st.size}`);
@@ -755,22 +842,37 @@ export default class ProxyVpnAbility extends VpnExtensionAbility {
     }
   }
 
-  private pumpErrorLog(): void {
+  /**
+   * 把 Xray 落盘日志增量写入 app.log（hdc 可直接拉）。
+   * @param name 文件名
+   * @param tag 日志标签 err / access
+   * @param limitChunk 是否截断单次增量
+   */
+  private pumpXrayLogFile(name: string, tag: 'err' | 'access', limitChunk: boolean): void {
     try {
-      const path = `${this.context.filesDir}/xray-error.log`;
+      const path = `${this.context.filesDir}/${name}`;
       if (!fs.accessSync(path)) {
         return;
       }
       const full: string = fs.readTextSync(path);
-      if (full.length <= this.errChars) {
+      let cursor = tag === 'err' ? this.errChars : this.accessChars;
+      if (full.length <= cursor) {
         return;
       }
-      const chunk: string = full.substring(this.errChars);
-      this.errChars = full.length;
+      let chunk: string = full.substring(cursor);
+      if (limitChunk && chunk.length > LOG_PUMP_CHUNK_MAX) {
+        chunk = chunk.substring(chunk.length - LOG_PUMP_CHUNK_MAX);
+      }
+      if (tag === 'err') {
+        this.errChars = full.length;
+      } else {
+        this.accessChars = full.length;
+      }
       let off = 0;
+      const label = tag === 'err' ? 'xray-error' : 'xray-access';
       while (off < chunk.length) {
         const piece = chunk.substring(off, off + 1800);
-        Logger.info(TAG, `[xray-error] ${piece}`);
+        Logger.info(TAG, `[${label}] ${piece}`);
         off += 1800;
       }
     } catch (_e) {

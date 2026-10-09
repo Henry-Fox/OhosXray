@@ -49,3 +49,6 @@ Desktop.ini
 # v0 design reference extract
 /_v0_ref/
 
+# Device debugging dumps (screenshots, logs, node links)
+/.tmp-device/
+

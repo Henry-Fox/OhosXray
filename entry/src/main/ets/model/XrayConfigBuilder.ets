@@ -16,6 +16,11 @@ export interface XrayBuildOptions {
   sendThrough?: string;
   // 默认 true：国内 geosite:cn / geoip:cn 直连；false：全部走代理
   smartRoute?: boolean;
+  /**
+   * 若已解析出节点 IPv4，写入 proxy outbound 的 address，
+   * 避免 DoH/DNS 尚未就绪时无法拨号域名节点（鸡生蛋）。
+   */
+  proxyDialAddress?: string;
   // local 模式下使用
   socksListen?: string;
   socksPort?: number;
@@ -223,7 +228,7 @@ function buildStreamSettings(profile: ServerProfile): XrayStreamSettings {
   return stream;
 }
 
-function buildOutbound(profile: ServerProfile, sendThrough?: string): XrayOutbound {
+function buildOutbound(profile: ServerProfile, sendThrough?: string, dialAddress?: string): XrayOutbound {
   const user: XrayUser = { id: profile.uuid };
 
   if (profile.protocol === ProxyProtocol.VMESS) {
@@ -236,8 +241,9 @@ function buildOutbound(profile: ServerProfile, sendThrough?: string): XrayOutbou
     }
   }
 
+  const host = (dialAddress && dialAddress.length > 0) ? dialAddress : profile.address;
   const server: XrayVnextServer = {
-    address: profile.address,
+    address: host,
     port: profile.port,
     users: [user]
   };
@@ -332,14 +338,26 @@ export function buildXrayConfig(profile: ServerProfile, options: XrayBuildOption
       network: 'tcp',
       outboundTag: 'dns-out'
     });
-    // Vision/XTLS 拒 UDP/443（QUIC）；拦掉后浏览器回落 TCP
+    // Vision/XTLS 不支持 UDP/443（QUIC）；不拦的话浏览器会卡在 HTTP/3。
     routingRules.push({
       type: 'field',
       port: 443,
       network: 'udp',
       outboundTag: 'block'
     });
+    // DoH 明确走 proxy（节点已用 IP 直拨）。国内直连 1.1.1.1/8.8.8.8 常被劫持或超时。
+    routingRules.push({
+      type: 'field',
+      ip: ['1.1.1.1', '1.0.0.1', '8.8.8.8', '8.8.4.4'],
+      outboundTag: 'proxy'
+    });
     if (smartRoute) {
+      // 视频 App 常直连 IP 或走 QUIC；优先按域名走代理，避免被 geosite:cn 误判直连
+      routingRules.push({
+        type: 'field',
+        domain: ['geosite:youtube', 'geosite:google'],
+        outboundTag: 'proxy'
+      });
       // 系统层已排除大部分国内 IP；此处兜底：仍进入 TUN 的国内域名/IP 走 direct
       routingRules.push({
         type: 'field',
@@ -351,7 +369,6 @@ export function buildXrayConfig(profile: ServerProfile, options: XrayBuildOption
         domain: [
           'geosite:private',
           'geosite:apple-cn',
-          'geosite:google-cn',
           'geosite:tld-cn',
           'geosite:cn'
         ],
@@ -371,7 +388,7 @@ export function buildXrayConfig(profile: ServerProfile, options: XrayBuildOption
   }
 
   const routing: XrayRouting = {
-    domainStrategy: 'AsIs',
+    domainStrategy: options.mode === 'tun' ? 'IPIfNonMatch' : 'AsIs',
     rules: routingRules
   };
 
@@ -380,15 +397,16 @@ export function buildXrayConfig(profile: ServerProfile, options: XrayBuildOption
     statsOutboundDownlink: true
   };
 
-  // 日志：tun 模式开 debug 并落盘到应用 filesDir（Go 日志默认写 stderr，
-  // NAPI 环境下会丢失，必须写文件才能用 hdc file pull 回读诊断）；
-  // local 模式保持 info 且不落盘。
-  const logConfig: XrayLogConfig = { loglevel: options.mode === 'tun' ? 'warning' : 'info' };
+  // tun 模式：warning 过少时鸿蒙 7 上「已连接但无流量」难排查，暂用 info + error 落盘。
+  const logConfig: XrayLogConfig = { loglevel: options.mode === 'tun' ? 'info' : 'info' };
   if (options.mode === 'tun' && options.logDir && options.logDir.length > 0) {
     logConfig.error = `${options.logDir}/xray-error.log`;
+    logConfig.access = `${options.logDir}/xray-access.log`;
   }
 
-  const outbounds: XrayOutbound[] = [buildOutbound(profile, options.sendThrough)];
+  const outbounds: XrayOutbound[] = [
+    buildOutbound(profile, options.sendThrough, options.proxyDialAddress)
+  ];
   if (options.mode === 'tun') {
     outbounds.push(dnsOutbound);
   }
@@ -420,6 +438,7 @@ export function buildXrayConfig(profile: ServerProfile, options: XrayBuildOption
       };
       dnsServers.push(cnDns);
     }
+    // IP 形式 DoH：经 proxy 出站时打到真 1.1.1.1/8.8.8.8（避免国内劫持假证书）。
     dnsServers.push('https://1.1.1.1/dns-query');
     dnsServers.push('https://8.8.8.8/dns-query');
     const dnsConfig: XrayDnsConfig = {
